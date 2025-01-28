@@ -1,0 +1,25 @@
+{
+	"name": "sample-app",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"workspaces": [
+		"src",
+		"api"
+	],
+	"dependencies": {
+		"wirejs-dom": "^1.0.34",
+		"wirejs-resources": "^0.1.5-alpha",
+		"dompurify": "^3.2.3",
+		"marked": "^15.0.6"
+	},
+	"devDependencies": {
+		"wirejs-scripts": "^3.0.1"
+	},
+	"scripts": {
+		"prebuild": "npm run prebuild --workspaces --if-present",
+		"prestart": "npm run prestart --workspaces --if-present",
+		"start": "wirejs-scripts start",
+		"build": "wirejs-scripts build"
+	}
+}
