@@ -1,0 +1,11 @@
+customHeaders:
+  - pattern: '/images/*'
+    headers:
+    - key: 'Cache-Control'
+      value: 'private, max-age=600'
+  - pattern: '*.js'
+    headers:
+    - key: 'Cache-Control'
+      value: 'private, max-age=600'
+    - key: 'Content-Type'
+      value: 'text/javascript;charset=UTF-8'
