@@ -26,9 +26,24 @@ const apiCode = Object.keys(indexModule)
 
 const baseClient = dedent(1, /* js */ `
 	async function wirejsCallApi(method, ...args) {
+		function isNode() {
+			return typeof args[0]?.cookies?.getAll === 'function'
+			// return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+		}
+
+		function apiUrl() {
+			if (isNode()) {
+				return "${API_URL}";
+			} else {
+				return "/api";
+			}
+		}
+		
 		let cookieHeader = {};
-		if (typeof args[0]?.cookies?.getAll === 'function') {
-			const cookies = args[0]?.cookies?.getAll();
+
+		if (isNode()) {
+			const context = args[0];
+			const cookies = context.cookies.getAll();
 			cookieHeader = typeof cookies === 'object'
 				? {
 					Cookie: Object.entries(cookies).map(kv => kv.join('=')).join('; ')
@@ -36,7 +51,7 @@ const baseClient = dedent(1, /* js */ `
 				: {};
 		}
 
-		const response = await fetch("${API_URL}", {
+		const response = await fetch(apiUrl(), {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -45,6 +60,25 @@ const baseClient = dedent(1, /* js */ `
 			body: JSON.stringify([{method, args:[...args]}]),
 		});
 		const body = await response.json();
+
+		if (isNode()) {
+			const context = args[0];
+			for (const c of response.headers.getSetCookie()) {
+				const parts = c.split(';').map(p => p.trim());
+				const flags = parts.slice(1);
+				const [name, value] = parts[0].split('=').map(decodeURIComponent);
+				const httpOnly = flags.includes('HttpOnly');
+				const secure = flags.includes('Secure');
+				const maxAgePart = flags.find(f => f.startsWith('Max-Age='))?.split('=')[1];
+				context.cookies.set({
+					name,
+					value,
+					httpOnly,
+					secure,
+					maxAge: maxAgePart ? parseInt(maxAgePart) : undefined
+				});
+			}
+		}
 
 		const error = body[0].error;
 		if (error) {

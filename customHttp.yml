@@ -9,3 +9,7 @@ customHeaders:
       value: 'private, max-age=600'
     - key: 'Content-Type'
       value: 'text/javascript;charset=UTF-8'
+  - pattern: '*.html'
+    headers:
+    - key: 'Content-Type'
+      value: 'text/html;charset=UTF-8'
