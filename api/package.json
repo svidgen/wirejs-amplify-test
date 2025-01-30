@@ -4,12 +4,8 @@
 	"version": "1.0.0",
 	"type": "module",
 	"scripts": {
-		"prestart": "node prebuild.js",
-		"start": "",
-		"prebuild": "node prebuild.js"
-	},
-	"devDependencies": {
-		"rimraf": "^6.0.1"
+		"prestart": "wirejs-scripts prebuild-api",
+		"prebuild": "wirejs-scripts prebuild-api"
 	},
 	"exports": {
 		"wirejs:client": "./index.client.js",

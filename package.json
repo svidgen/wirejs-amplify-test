@@ -9,12 +9,12 @@
 	],
 	"dependencies": {
 		"wirejs-dom": "^1.0.34",
-		"wirejs-resources": "^0.1.8-alpha",
+		"wirejs-resources": "^0.1.9-alpha",
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6"
 	},
 	"devDependencies": {
-		"wirejs-scripts": "^3.0.1"
+		"wirejs-scripts": "^3.0.3"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",
