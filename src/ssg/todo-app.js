@@ -44,7 +44,7 @@ function Todos() {
 }
 
 async function App() {
-	const accountMenuNode = accountMenu(auth);
+	const accountMenuNode = accountMenu({ api: auth });
 
 	accountMenuNode.data.onchange(async state => {
 		if (state.state.user) {
@@ -62,7 +62,7 @@ async function App() {
 	return self;
 }
 
-export async function generate() {
+export async function generate(context) {
 	const page = html`
 		<!doctype html>
 		<html>

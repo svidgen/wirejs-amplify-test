@@ -2,18 +2,21 @@ import { attribute, html, node, text, id } from 'wirejs-dom/v2';
 import { authenticator } from './authenticator.js';
 
 /**
- * @typedef {import('wirejs-services').AuthenticationService} AuthenticationService
+ * @typedef {import('wirejs-resources').AuthenticationService} AuthenticationService
  * @typedef {ReturnType<AuthenticationService['buildApi']>} AuthStateApi
  * @typedef {Awaited<ReturnType<AuthStateApi['getState']>>} AuthState
  * @typedef {AuthState['actions'][string]} AuthStateAction
  * @typedef {Parameters<AuthStateApi['setState']>[0]} AuthStateActionInput
- * @typedef {import('wirejs-services').Context} Context
+ * @typedef {import('wirejs-resources').Context} Context
  */
 
 /**
- * @param {AuthStateApi} api
+ * @param {{
+ * 	api: AuthStateApi;
+ * 	initialState?: AuthState
+ * }} options
  */
-export const accountMenu = (api) => {
+export const accountMenu = ({ api, initialState }) => {
 	const uiState = {
 		expanded: false
 	};
@@ -51,7 +54,7 @@ export const accountMenu = (api) => {
 		self.data.menu.style.right = `${document.body.clientWidth - position.right + 16}px`;
 	};
 
-	const authenticatorNode = authenticator(api);
+	const authenticatorNode = authenticator(api, initialState);
 	authenticatorNode.data.onchange(state => {
 		self.data.user = state.state.user || '';
 		close();
@@ -67,7 +70,10 @@ export const accountMenu = (api) => {
 	const self = html`<accountmenu style='display: inline-block;'>
 		<div
 			style='display: inline-block;'
-		>${node('user', name => name ? html`<b>${name}</b>` : html`<i>Anonymous</i>`)}</div>
+		>${node(
+			'user',
+			initialState?.state?.user,
+			name => name ? html`<b>${name}</b>` : html`<i>Anonymous</i>`)}</div>
 		<div style='
 				display: inline-block;
 				border: 1px solid silver;
@@ -99,8 +105,10 @@ export const accountMenu = (api) => {
 			box-shadow: -0.125rem 0.125rem 0.25rem lightgray;
 		'>${node('authenticator', authenticatorNode)}</div>
 	</accountmenu>`.onadd(async self => {
-		const state = await api.getState(true);
-		self.data.user = state.state.user || '';
+		if (!initialState) {
+			const state = await api.getState(true);
+			self.data.user = state.state.user || '';
+		}
 	}).extend(self => ({
 		data: {
 			/**

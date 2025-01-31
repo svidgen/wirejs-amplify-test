@@ -5,17 +5,50 @@ import { accountMenu } from '../../components/account-menu.js';
 import { auth, wiki } from 'my-api';
 
 /**
+ * @template T
+ * @typedef {T extends object ? {
+ * 	[K in keyof T]: T[K] extends HTMLElement | Element | Node
+ * 		? { data: NonHtml<T[K]['data']> }
+ * 		: NonHtml<T[K]>
+ * } : T} NonHtml
+ */
+
+/**
+ * @template T extends HTMLElement & { data: any }
+ * 
+ * Shallow check for a `data` hydration property. If present, returns the
+ * argument typed according to the given `T`.
+ * 
+ * @param {unknown} arg0
+ * @returns {NonHtml<T['data']> | undefined}
+ */
+function initData(arg0) {
+	return arg0?.data ? data : undefined;
+}
+
+/**
  * @param {{
  * 	content: string | undefined;
  * 	user: string | undefined;
  * }}
  * @returns 
  */
-async function Wiki({ context }) {
-	const filepath = (context || window).location.pathname;
-	const content = await wiki.read(context, filepath);
+async function Wiki(init) {
+	const { context } = init;
 
-	const accountMenuNode = accountMenu(auth);
+	const data = /** @type {ReturnType<typeof initData<typeof self>>} */ (init?.data);
+
+	console.log('Wiki init', init);
+	const filepath = (context || window).location.pathname;
+
+	/** @type {string} */
+	const content = data?.content || await wiki.read(context, filepath);
+
+	/** @type {Awaited<ReturnType<typeof auth.getState>>} */
+	const initialState = data?.initialAuthState || await auth.getState(context);
+
+	const accountMenuNode = accountMenu({ api: auth, initialState });
+
 	let markdown = content ?? `This page doesn't exist yet`;
 	const signedOutAction = html`<i>(<b>Sign in</b> to edit.)</i>`;
 	const signedInAction = html`<button onclick=${enableEditing}>edit</button>`;
@@ -24,13 +57,16 @@ async function Wiki({ context }) {
 		<textarea style='width: 20em; height: 10em;' ${id('textarea')}></textarea>
 	</div>`;
 
-	accountMenuNode.data.onchange(async state => {
-		if (state.state.user) {
-			self.data.actions = signedInAction;
-		} else {
-			self.data.actions = signedOutAction;
-		}
+	accountMenuNode.data.onchange(state => {
+		self.data.actions = actionsFor(state);
 	});
+
+	/**
+	 * @param {Awaited<ReturnType<typeof auth.getState>} state 
+	 */
+	function actionsFor(state) {
+		return state.state.state === 'authenticated' ? signedInAction : signedOutAction;
+	}
 
 	function enableEditing() {
 		editor.data.textarea.value = markdown;
@@ -61,8 +97,12 @@ async function Wiki({ context }) {
 			html`<div>${DOMPurify.sanitize(marked.parse(md))}</div>`)
 		}
 		${node('editor', invisibleDiv)}
-		${node('actions', signedOutAction)}
-	</div>`;
+		${node('actions', actionsFor(initialState))}
+	</div>`.extend(self => ({
+		data: {
+			initialAuthState: initialState
+		}
+	}));
 
 	return self;
 }
