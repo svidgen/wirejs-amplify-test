@@ -119,10 +119,18 @@ export const authenticator = (stateManager, initialState) => {
 			}
 		}
 	})).onadd(async (self) => {
-		console.log('authenticator render state');
-		self.renderState(initialState || await stateManager.getState(true))
+		if (initialState) {
+			console.log('authenticator render state');
+			self.renderState(initialState)
+		}
 	}).extend(self => ({
 		data: {
+			/**
+			 * @param {AuthState} state 
+			 * @returns 
+			 */
+			setState: state => self.renderState(state),
+
 			/**
 			 * @param {(state: AuthState) => any} callback
 			 */

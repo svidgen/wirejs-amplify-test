@@ -107,6 +107,7 @@ export const accountMenu = ({ api, initialState }) => {
 	</accountmenu>`.onadd(async self => {
 		if (!initialState) {
 			const state = await api.getState(true);
+			authenticatorNode.data.setState(state);
 			self.data.user = state.state.user || '';
 		}
 	}).extend(self => ({
