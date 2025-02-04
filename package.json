@@ -8,13 +8,14 @@
 		"api"
 	],
 	"dependencies": {
-		"wirejs-dom": "^1.0.35",
-		"wirejs-resources": "^0.1.9-alpha",
 		"dompurify": "^3.2.3",
-		"marked": "^15.0.6"
+		"marked": "^15.0.6",
+		"wirejs-dom": "^1.0.37",
+		"wirejs-resources": "file:../../packages/create-wirejs-app/packages/wirejs-resources"
 	},
 	"devDependencies": {
-		"wirejs-scripts": "^3.0.4"
+		"typescript": "^5.7.3",
+		"wirejs-scripts": "file:../../packages/create-wirejs-app/packages/wirejs-scripts"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",

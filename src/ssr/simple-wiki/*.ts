@@ -1,71 +1,55 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { html, id, text, hydrate, node, list, attribute } from 'wirejs-dom/v2';
+import { html, id, text, hydrate, node, list, attribute, KindaPretty } from 'wirejs-dom/v2';
+import type { AuthenticationMachineState, Context } from 'wirejs-resources';
 import { accountMenu } from '../../components/account-menu.js';
 import { auth, wiki } from 'my-api';
 
-/**
- * @template T
- * @typedef {T extends object ? {
- * 	[K in keyof T]: T[K] extends HTMLElement | Element | Node
- * 		? { data: NonHtml<T[K]['data']> }
- * 		: NonHtml<T[K]>
- * } : T} NonHtml
- */
+type WithoutNodes<T> = KindaPretty<{
+	[K in keyof T]: T[K] extends Node
+		? T[K] extends { data: any } ? WithoutNodes<T[K]['data']> : undefined
+		: WithoutNodes<T[K]>
+}>
 
 /**
- * @template T extends HTMLElement & { data: any }
- * 
  * Shallow check for a `data` hydration property. If present, returns the
  * argument typed according to the given `T`.
- * 
- * @param {unknown} arg0
- * @returns {NonHtml<T['data']> | undefined}
  */
-function initData(arg0) {
-	return arg0?.data ? data : undefined;
+function initData<T extends { data: any }>(arg0: any): WithoutNodes<T['data']> | undefined {
+	return arg0?.data ? arg0.data : undefined;
 }
 
-/**
- * @param {{
- * 	content: string | undefined;
- * 	user: string | undefined;
- * }}
- * @returns 
- */
-async function Wiki(init) {
+async function Wiki(init: { context?: Context, data?: any }) {
 	const { context } = init;
 
-	const data = /** @type {ReturnType<typeof initData<typeof self>>} */ (init?.data);
+	const data = initData<typeof self>(init);
 
 	console.log('Wiki init', init);
 	const filepath = (context || window).location.pathname;
 
-	/** @type {string} */
 	const content = data?.content || await wiki.read(context, filepath);
-
-	/** @type {Awaited<ReturnType<typeof auth.getState>>} */
-	const initialState = data?.initialAuthState || await auth.getState(context);
-
+	const initialState: AuthenticationMachineState =
+		data?.initialAuthState || await auth.getState(context)
+	;
 	const accountMenuNode = accountMenu({ api: auth, initialState });
 
-	let markdown = content ?? `This page doesn't exist yet`;
+	let markdown: string = content ?? `This page doesn't exist yet`;
 	const signedOutAction = html`<i>(<b>Sign in</b> to edit.)</i>`;
 	const signedInAction = html`<button onclick=${enableEditing}>edit</button>`;
 	const invisibleDiv = html`<div style='display: none;'></div>`;
 	const editor = html`<div>
-		<textarea style='width: 20em; height: 10em;' ${id('textarea')}></textarea>
+		<textarea
+			${id('textarea', HTMLTextAreaElement)}
+			style='width: 20em; height: 10em;'
+		></textarea>
 	</div>`;
 
 	accountMenuNode.data.onchange(state => {
 		self.data.actions = actionsFor(state);
 	});
 
-	/**
-	 * @param {Awaited<ReturnType<typeof auth.getState>} state 
-	 */
-	function actionsFor(state) {
-		return state.state.state === 'authenticated' ? signedInAction : signedOutAction;
+	function actionsFor(state: AuthenticationMachineState) {
+		return state.state === 'authenticated' ? signedInAction : signedOutAction;
 	}
 
 	function enableEditing() {
@@ -94,7 +78,7 @@ async function Wiki(init) {
 	const self = html`<div id='wiki'>
 		<div style='float: right;'>${accountMenuNode}</div>
 		${node('content', markdown, md => 
-			html`<div>${DOMPurify.sanitize(marked.parse(md))}</div>`)
+			html`<div>${DOMPurify.sanitize(marked.parse(md!) as string)}</div>`)
 		}
 		${node('editor', invisibleDiv)}
 		${node('actions', actionsFor(initialState))}
@@ -107,12 +91,7 @@ async function Wiki(init) {
 	return self;
 }
 
-/**
- * 
- * @param {import('wirejs-services').Context} context 
- * @returns 
- */
-export async function generate(context) {
+export async function generate(context: Context) {
 	const visiblePath = context.location.pathname
 		.replaceAll('/', ' > ')
 		.replaceAll('<', '&lt;')
