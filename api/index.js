@@ -1283,7 +1283,7 @@ var Secret = class extends Resource {
 };
 
 // ../../../packages/create-wirejs-app/packages/wirejs-resources/dist/adapters/context.js
-var __requiresContext = Symbol("__requiresContext");
+var __requiresContext = "__requiresContext";
 function withContext(contextWrapper, path2 = []) {
   const fnOrNs = new Proxy(function() {
   }, {
