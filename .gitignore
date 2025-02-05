@@ -1,5 +1,6 @@
 node_modules
 dist
+pre-dist
 temp
 src/build_id.json
 api/index.client.js
