@@ -49,11 +49,11 @@ export const authenticatoraction = (
 			<div>
 				<h4 style='margin-top: 1rem; margin-bottom: 0.5rem;'>${action.name}</h4>
 				<form
-					onsubmit=${evt => {
+					onsubmit=${(evt: SubmitEvent) => {
 						evt.preventDefault();
 						act({
 							key: action.key,
-							verb: evt.submitter?.value,
+							verb: (evt.submitter as any)?.value,
 							inputs: Object.fromEntries(inputs.map(input => ([
 								input.data.name,
 								input.data.value
