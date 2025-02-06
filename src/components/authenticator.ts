@@ -85,22 +85,27 @@ export const authenticator = (
 		${node('state', html`<span>Loading ...</span>` as HTMLElement)}
 	</authenticator>`.extend(() => ({
 		renderState(state: AuthenticationMachineState | { errors: any[] }) {
+			let message;
 			if ('errors' in state && state.errors) {
-				alert((state as any).errors.map((e: any) => e.message).join("\n\n"));
+				message = `<span style='color: darkred;'>` + (state as any).errors
+					.map((e: any) => e.message)
+					.join("\n\n") + `</span>`;
 			} else {
 				lastKnownState = state as AuthenticationMachineState;
-				self.data.state = html`<div>
-					<div>${lastKnownState.message || ''}</div>
-					<div>${Object.entries(lastKnownState.actions).map(([_key, action]) => {
-						return authenticatoraction({...action}, async act => {
-							self.renderState(await stateManager.setState(null, act));
-						});
-					})}</div>
-				</div>`;
+				message = lastKnownState.message;
 			}
+			
+			self.data.state = html`<div>
+				<div>${message || ''}</div>
+				<div>${Object.entries(lastKnownState?.actions || []).map(([_key, action]) => {
+					return authenticatoraction({...action}, async act => {
+						self.renderState(await stateManager.setState(null, act));
+					});
+				})}</div>
+			</div>`;
 			for (const listener of listeners) {
 				try {
-					listener(state as AuthenticationMachineState);
+					listener(lastKnownState as AuthenticationMachineState);
 				} catch (error) {
 					console.error("Error calling auth state listener.");
 				}
