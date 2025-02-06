@@ -5,32 +5,32 @@ import type { AuthenticationMachineState, Context } from 'wirejs-resources';
 import { accountMenu } from '../../components/account-menu.js';
 import { auth, wiki } from 'my-api';
 
-type WithoutNodes<T> = KindaPretty<{
-	[K in keyof T]: T[K] extends Node
-		? T[K] extends { data: any } ? WithoutNodes<T[K]['data']> : undefined
-		: WithoutNodes<T[K]>
-}>
+type WithoutNodes<T> = undefined | (
+	T extends object ? {
+		[K in keyof T
+			as T[K] extends Node ? never : K]: WithoutNodes<T[K]>
+	} : T
+);
 
 /**
  * Shallow check for a `data` hydration property. If present, returns the
  * argument typed according to the given `T`.
  */
-function initData<T extends { data: any }>(arg0: any): WithoutNodes<T['data']> | undefined {
-	return arg0?.data ? arg0.data : undefined;
+function initData<T>(arg0: any): WithoutNodes<T> | undefined {
+	return arg0;
 }
 
 async function Wiki(init: { context?: Context, data?: any }) {
-	const { context } = init;
+	const { context, data } = init;
 
-	const data = initData<typeof self>(init);
-
-	console.log('Wiki init', init);
 	const filepath = (context || window).location.pathname;
 
-	const content = data?.content || await wiki.read(context, filepath);
+	const content: string =
+		data?.content ?? await wiki.read(context, filepath);
+
 	const initialState: AuthenticationMachineState =
-		data?.initialAuthState || await auth.getState(context)
-	;
+		data?.initialAuthState ?? await auth.getState(context);
+
 	const accountMenuNode = accountMenu({ api: auth, initialState });
 
 	let markdown: string = content ?? `This page doesn't exist yet`;
@@ -82,7 +82,7 @@ async function Wiki(init: { context?: Context, data?: any }) {
 		}
 		${node('editor', invisibleDiv)}
 		${node('actions', actionsFor(initialState))}
-	</div>`.extend(self => ({
+	</div>`.extend(_ => ({
 		data: {
 			initialAuthState: initialState
 		}
