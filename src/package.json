@@ -5,6 +5,6 @@
 	"type": "module",
 	"dependencies": {
 		"wirejs-dom": "*",
-        "my-api": "*"
+		"my-api": "*"
 	}
 }

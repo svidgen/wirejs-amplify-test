@@ -1,14 +1,27 @@
-import { AuthenticationService, FileService, withContext } from 'wirejs-resources';
+import {
+	AuthenticationService,
+	DistributedTable,
+	FileService,
+	PassThruParser,
+	withContext
+} from 'wirejs-resources';
 
-const userTodos = new FileService('app', 'userTodoApp');
+const userTodos = new DistributedTable('app', 'userTodos', {
+	parse: PassThruParser<Todo & { userId: string }>,
+	key: {
+		partition: 'userId',
+		sort: ['id']
+	}
+});
+
 const wikiPages = new FileService('app', 'wikiPages');
 const authService = new AuthenticationService('app', 'core-users');
 
 export const auth = authService.buildApi();
-
 export type Todo = {
 	id: string;
 	text: string;
+	order: number;
 };
 
 export const todos = withContext(context => ({
@@ -16,27 +29,49 @@ export const todos = withContext(context => ({
 		const user = await auth.requireCurrentUser(context);
 
 		try {
-			const todos = await userTodos.read(`${user.id}/todos.json`);
-			return todos ? JSON.parse(todos) : [];
+			const todos = await userTodos.query({ userId: user.id });
+			const todosArray = await Array.fromAsync(todos);
+			return todosArray
+				.sort((a, b) => a.order - b.order)
+				.map(todo => ({
+					id: todo.id,
+					text: todo.text,
+					order: todo.order,
+				}));
 		} catch (error) {
 			return [];
 		}
 	},
-	async write(todos: Todo[]) {
+
+	async save(todo: Todo) {
 		const user = await auth.requireCurrentUser(context);
 
-		if (!Array.isArray(todos) || !todos.every(todo =>
-			typeof todo.id === 'string'
-			&& typeof todo.text === 'string')
-		) {
-			throw new Error("Invalid todos!");
+		if (typeof todo.id !== 'string' || typeof todo.text !== 'string') {
+			throw new Error("Invalid todo!");
 		}
 
-		const finalTodos = todos.map(todo => ({ id: todo.id, text: todo.text }));
-		await userTodos.write(`${user.id}/todos.json`, JSON.stringify(finalTodos));
+		const finalTodo = {
+			userId: user.id,
+			id: todo.id,
+			text: todo.text,
+			order: todo.order,
+		};
+		await userTodos.save(finalTodo);
 
 		return true;
-	}
+	},
+
+	async remove(todoId: string) {
+		const user = await auth.requireCurrentUser(context);
+
+		if (typeof todoId !== 'string') {
+			throw new Error("Invalid todo ID!");
+		}
+
+		await userTodos.delete({ userId: user.id, id: todoId });
+
+		return true;
+	},
 }));
 
 function normalizeWikiPageFilename(page: string) {

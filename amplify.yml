@@ -3,16 +3,16 @@ backend:
   phases:
     build:
       commands:
-        - npx wirejs-deploy-amplify-basic@latest prebuild
+        - npx wirejs-deploy-amplify-basic@table-resource prebuild
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
         - npx ampx generate outputs --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
     build:
       commands:
-        - npx wirejs-deploy-amplify-basic@latest inject-backend
+        - npx wirejs-deploy-amplify-basic@table-resource inject-backend
         - npm run build
-        - npx wirejs-deploy-amplify-basic@latest build-hosting-artifacts
+        - npx wirejs-deploy-amplify-basic@table-resource build-hosting-artifacts
   artifacts:
     baseDirectory: .amplify-hosting
     files:

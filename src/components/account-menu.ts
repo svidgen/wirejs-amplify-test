@@ -15,7 +15,6 @@ export const accountMenu = ({ api, initialState }: {
 		expanded: false
 	};
 
-	let lastKnownState = initialState;
 	const listeners = new Set<Callback>();
 
 	const listenForClose = (
@@ -50,19 +49,13 @@ export const accountMenu = ({ api, initialState }: {
 
 	const authenticatorNode = authenticator(api, initialState);
 	authenticatorNode.data.onchange(state => {
-		const isSameState = lastKnownState && lastKnownState.state === state.state;
-		const hasMessage = state.message;
-		lastKnownState = state;
 		self.data.user = state.user?.username || '';
-		if (!isSameState && !hasMessage) close();
-
-		if (!isSameState) {
-			for (const listener of listeners) {
-				try {
-					listener(state);
-				} catch (error) {
-					console.error("Error calling auth state listener.");
-				}
+		close();
+		for (const listener of listeners) {
+			try {
+				listener(state);
+			} catch (error) {
+				console.error("Error calling auth state listener.");
 			}
 		}
 	});

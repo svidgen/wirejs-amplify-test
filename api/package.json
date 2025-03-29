@@ -8,6 +8,7 @@
 		"prebuild": "wirejs-scripts prebuild-api"
 	},
 	"exports": {
+		"types": "./index.ts",
 		"wirejs:client": "./dist/index.client.js",
 		"default": "./dist/index.js"
 	}

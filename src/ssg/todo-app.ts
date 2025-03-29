@@ -3,9 +3,9 @@ import { accountMenu } from '../components/account-menu.js';
 import { auth, todos, Todo } from 'my-api';
 
 function Todos() {
-	const save = async () => {
+	const add = async (todo: Todo) => {
 		try {
-			await todos.write(null, self.data.todos);
+			await todos.save(null, todo);
 		} catch (error) {
 			alert(error);
 		}
@@ -13,7 +13,7 @@ function Todos() {
 
 	const remove = (todo: Todo) => {
 		self.data.todos = self.data.todos.filter(t => t.id !== todo.id);
-		save();
+		todos.remove(null, todo.id);
 	}
 
 	const newid = () => crypto.randomUUID();
@@ -29,9 +29,16 @@ function Todos() {
 		<div>
 			<form onsubmit=${(event: Event) => {
 				event.preventDefault();
-				self.data.todos.push({ id: newid(), text: self.data.newTodo });
+				const todo = {
+					id: newid(),
+					text: self.data.newTodo,
+					order: (self.data.todos[
+						self.data.todos.length - 1
+					]?.order ?? 0) + 1,
+				};
+				self.data.todos.push(todo);
 				self.data.newTodo = '';
-				save();
+				add(todo);
 			}}>
 				<input type='text' value=${attribute('newTodo', '' as string)} />
 				<input type='submit' value='Add' />
