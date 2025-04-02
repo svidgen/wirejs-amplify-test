@@ -9,8 +9,8 @@ import {
 const userTodos = new DistributedTable('app', 'userTodos', {
 	parse: PassThruParser<Todo & { userId: string }>,
 	key: {
-		partition: 'userId',
-		sort: ['id']
+		partition: { field: 'userId', type: 'string' },
+		sort: { field: 'id', type: 'string' }
 	}
 });
 
