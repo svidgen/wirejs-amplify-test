@@ -1,6 +1,9 @@
 version: 1
 backend:
   phases:
+    preBuild:
+      commands:
+        - nvm install 22
     build:
       commands:
         - npx wirejs-deploy-amplify-basic@table-resource prebuild
