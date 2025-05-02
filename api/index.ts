@@ -11,25 +11,39 @@ const userTodos = new DistributedTable('app', 'userTodos', {
 	key: {
 		partition: { field: 'userId', type: 'string' },
 		sort: { field: 'id', type: 'string' }
-	}
+	},
+	indexes: [
+		{
+			partition: { field: 'userId', type: 'string' },
+			sort: { field: 'list', type: 'string' },
+		}
+	]
 });
 
 const wikiPages = new FileService('app', 'wikiPages');
 const authService = new AuthenticationService('app', 'core-users');
 
 export const auth = authService.buildApi();
+
 export type Todo = {
 	id: string;
 	text: string;
 	order: number;
+	list: string;
 };
 
 export const todos = withContext(context => ({
-	async read(): Promise<Todo[]> {
+	async read(list?: string): Promise<Todo[]> {
 		const user = await auth.requireCurrentUser(context);
 
 		try {
-			const todos = await userTodos.query({ userId: user.id });
+			const todos = userTodos.query({
+				by: 'userId-list',
+				where: {
+					userId: { eq: user.id },
+					list: { eq: list ?? 'default' }
+				},
+			});
 			const todosArray = await Array.fromAsync(todos);
 			return todosArray
 				.sort((a, b) => a.order - b.order)
@@ -37,6 +51,7 @@ export const todos = withContext(context => ({
 					id: todo.id,
 					text: todo.text,
 					order: todo.order,
+					list: todo.list || 'default'
 				}));
 		} catch (error) {
 			return [];
@@ -55,6 +70,7 @@ export const todos = withContext(context => ({
 			id: todo.id,
 			text: todo.text,
 			order: todo.order,
+			list: todo.list || 'default'
 		};
 		await userTodos.save(finalTodo);
 
