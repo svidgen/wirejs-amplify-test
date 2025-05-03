@@ -38,10 +38,6 @@ export const todos = withContext(context => ({
 
 		try {
 			const todos = userTodos.query({
-				// by: 'userId-id',
-				// where: {
-				// 	userId: { eq: user.id }
-				// }
 				by: 'userId-list',
 				where: {
 					userId: { eq: user.id },
