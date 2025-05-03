@@ -11,16 +11,17 @@
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6",
 		"wirejs-dom": "^1.0.39",
-		"wirejs-resources": "^0.1.41-table-resource"
+		"wirejs-resources": "^0.1.42-table-resource"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.3",
-		"wirejs-scripts": "^3.0.39-table-resource"
+		"wirejs-scripts": "^3.0.40-table-resource"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",
 		"prestart": "npm run prestart --workspaces --if-present",
 		"start": "wirejs-scripts start",
-		"build": "wirejs-scripts build"
+		"build": "wirejs-scripts build",
+		"bump": "rm -rf node_modules package-lock.json && npm i && git add . && git commit -m \"bump\" && git push"
 	}
 }
