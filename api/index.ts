@@ -12,12 +12,12 @@ const userTodos = new DistributedTable('app', 'userTodos', {
 		partition: { field: 'userId', type: 'string' },
 		sort: { field: 'id', type: 'string' }
 	},
-	indexes: [
-		{
-			partition: { field: 'userId', type: 'string' },
-			sort: { field: 'list', type: 'string' },
-		}
-	]
+	// indexes: [
+	// 	{
+	// 		partition: { field: 'userId', type: 'string' },
+	// 		sort: { field: 'list', type: 'string' },
+	// 	}
+	// ]
 });
 
 const wikiPages = new FileService('app', 'wikiPages');
@@ -38,11 +38,15 @@ export const todos = withContext(context => ({
 
 		try {
 			const todos = userTodos.query({
-				by: 'userId-list',
+				by: 'userId-id',
 				where: {
-					userId: { eq: user.id },
-					list: { eq: list ?? 'default' }
-				},
+					userId: { eq: user.id }
+				}
+				// by: 'userId-list',
+				// where: {
+				// 	userId: { eq: user.id },
+				// 	list: { eq: list ?? 'default' }
+				// },
 			});
 			const todosArray = await Array.fromAsync(todos);
 			return todosArray
