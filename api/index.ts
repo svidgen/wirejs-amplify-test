@@ -13,14 +13,10 @@ const userTodos = new DistributedTable('app', 'userTodos', {
 		sort: { field: 'id', type: 'string' }
 	},
 	indexes: [
-		// {
-		// 	partition: { field: 'userId', type: 'string' },
-		// 	sort: { field: 'list', type: 'string' },
-		// },
 		{
-			partition: { field: 'list', type: 'string' },
-			sort: { field: 'userId', type: 'string' },
-		}
+			partition: { field: 'userId', type: 'string' },
+			sort: { field: 'list', type: 'string' },
+		},
 	]
 });
 
@@ -42,15 +38,11 @@ export const todos = withContext(context => ({
 
 		try {
 			const todos = userTodos.query({
-				by: 'userId-id',
+				by: 'userId-list',
 				where: {
-					'userId': { eq: user.id },
-				}
-				// by: 'userId-list',
-				// where: {
-				// 	userId: { eq: user.id },
-				// 	list: { eq: list ?? 'default' }
-				// },
+					userId: { eq: user.id },
+					list: { eq: list ?? 'default' }
+				},
 			});
 			const todosArray = await Array.fromAsync(todos);
 			return todosArray
