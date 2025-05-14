@@ -1,24 +1,11 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { html, id, text, hydrate, node, list, attribute, KindaPretty } from 'wirejs-dom/v2';
+import { html, id, hydrate, node, } from 'wirejs-dom/v2';
 import type { AuthenticationMachineState, Context } from 'wirejs-resources';
-import { accountMenu } from '../../components/account-menu.js';
 import { auth, wiki } from 'my-api';
+import { AuthMonitor } from 'wirejs-components/utils';
+import { Main } from '../../layouts/main.js';
 
-type WithoutNodes<T> = undefined | (
-	T extends object ? {
-		[K in keyof T
-			as T[K] extends Node ? never : K]: WithoutNodes<T[K]>
-	} : T
-);
-
-/**
- * Shallow check for a `data` hydration property. If present, returns the
- * argument typed according to the given `T`.
- */
-function initData<T>(arg0: any): WithoutNodes<T> | undefined {
-	return arg0;
-}
 
 async function Wiki(init: { context?: Context, data?: any }) {
 	const { context, data } = init;
@@ -31,8 +18,6 @@ async function Wiki(init: { context?: Context, data?: any }) {
 	const initialState: AuthenticationMachineState =
 		data?.initialAuthState ?? await auth.getState(context);
 
-	const accountMenuNode = accountMenu({ api: auth, initialState });
-
 	let markdown: string = content ?? `This page doesn't exist yet`;
 	const signedOutAction = html`<i>(<b>Sign in</b> to edit.)</i>`;
 	const signedInAction = html`<button onclick=${enableEditing}>edit</button>`;
@@ -40,16 +25,15 @@ async function Wiki(init: { context?: Context, data?: any }) {
 	const editor = html`<div>
 		<textarea
 			${id('textarea', HTMLTextAreaElement)}
-			style='width: 20em; height: 10em;'
 		></textarea>
 	</div>`;
 
-	accountMenuNode.data.onchange(state => {
+	AuthMonitor.subscribe(state => {
 		self.data.actions = actionsFor(state);
 	});
 
-	function actionsFor(state: AuthenticationMachineState) {
-		return state.state === 'authenticated' ? signedInAction : signedOutAction;
+	function actionsFor(state: AuthenticationMachineState | undefined) {
+		return state?.state === 'authenticated' ? signedInAction : signedOutAction;
 	}
 
 	function enableEditing() {
@@ -76,7 +60,6 @@ async function Wiki(init: { context?: Context, data?: any }) {
 	}
 
 	const self = html`<div id='wiki'>
-		<div style='float: right;'>${accountMenuNode}</div>
 		${node('content', markdown, md => 
 			html`<div>${DOMPurify.sanitize(marked.parse(md!) as string)}</div>`)
 		}
@@ -100,22 +83,11 @@ export async function generate(context: Context) {
 		.replace(/\s+/g, ' ')
 	;
 
-	const page = html`
-		<!doctype html>
-		<html>
-			<head>
-				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				<title>Wiki ${visiblePath}</title>
-			</head>
-			<body>
-				<p><a href='/'>Home</a></p>
-				<h1>Wiki ${visiblePath}</h1>
-				${await Wiki({ context })}
-			</body>
-		</html>
-	`;
-
-	return page;
+	return Main({
+		siteSubTitle: 'A simple sample wiki',
+		pageTitle: visiblePath,
+		content: await Wiki({ context }),
+	})
 }
 
 hydrate('wiki', Wiki);

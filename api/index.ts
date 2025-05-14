@@ -16,7 +16,7 @@ const userTodos = new DistributedTable('app', 'userTodos', {
 		{
 			partition: { field: 'userId', type: 'string' },
 			sort: { field: 'list', type: 'string' },
-		},
+		}
 	]
 });
 
@@ -44,7 +44,7 @@ export const todos = withContext(context => ({
 					list: { eq: list ?? 'default' }
 				},
 			});
-			const todosArray = await Array.fromAsync(todos);
+			const todosArray = await fromAsync(todos);
 			return todosArray
 				.sort((a, b) => a.order - b.order)
 				.map(todo => ({
@@ -112,3 +112,14 @@ export const wiki = withContext(context => ({
 		return true;
 	}
 }));
+
+/**
+ * For node 20, which doesn't have `Array.fromAsync()`.
+ */
+async function fromAsync<T>(gen: AsyncGenerator<T>): Promise<T[]> {
+	const items: T[] = [];
+	for await (const item of gen) {
+		items.push(item);
+	}
+	return items;
+}

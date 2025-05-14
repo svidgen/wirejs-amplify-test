@@ -1,0 +1,108 @@
+:root {
+	--color-muted: #888;
+	--color-error: #c33;
+	--color-action: #533;
+	--border-color-muted: #777;
+	--border-color-subtle: #aaa;
+	--background-color-muted: #eee;
+}
+
+html {
+	padding: 0;
+	margin: 0
+}
+
+body {
+	font-family: math;
+	padding: 0;
+	margin: 0;
+	color: #333;
+}
+
+a {
+	font-weight: bold;
+	color: var(--color-action);
+	cursor: pointer;
+}
+
+menu {
+	padding-inline-start: 0;
+}
+
+li {
+	margin: 1rem;
+}
+
+menu li {
+	list-style: none;
+	margin: 1rem;
+}
+
+menu li a {
+	text-decoration: underline;
+}
+
+form {
+	margin: 1rem;
+}
+
+form div {
+	margin-bottom: 1rem;
+}
+
+label, input, button {
+	display: inline-block;
+	width: 9rem;
+	margin: 0.25rem;
+	border-radius: 0.125rem;
+}
+
+label {
+	font-weight: bold;
+	color: var(--color-muted);
+}
+
+input {
+	width: 20rem;
+	border: 1px solid var(--border-color-muted);
+	margin-bottom: 0.5rem;
+	padding: 0.5rem;
+	font-size: medium;
+}
+
+textarea {
+	width: calc(100% - 2rem);
+	height: 15rem;
+	font-size: medium;
+	font-family: 'Courier New', Courier, monospace;
+}
+
+button, input[type="submit"] {
+	font-family: math;
+	font-size: medium;
+	border: 1px solid var(--border-color-muted);
+	padding: 0.5rem;
+	background-color: var(--background-color-muted);
+}
+
+form span.status {
+	display: inline-block;
+	color: var(--color-muted);
+	margin-left: 0.5rem;
+}
+
+.error form span.status {
+	color: var(--color-error);
+}
+
+.section {
+	border-bottom: 1px dashed var(--border-color-subtle);
+	margin-bottom: 1.5rem;
+	padding-bottom: 1.5rem;
+}
+
+footer {
+	margin-top: 4rem;
+	border-top: 1px solid var(--border-color-muted);
+	color: var(--color-muted);
+}

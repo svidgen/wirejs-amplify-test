@@ -1,6 +1,7 @@
 import { html, node, list, attribute, hydrate } from 'wirejs-dom/v2';
-import { accountMenu } from '../components/account-menu.js';
+import { AuthenticatedContent } from 'wirejs-components';
 import { auth, todos, Todo } from 'my-api';
+import { Main } from '../layouts/main.js';
 
 function Todos() {
 	const remove = (todo: Todo) => {
@@ -44,41 +45,23 @@ function Todos() {
 }
 
 async function App() {
-	const accountMenuNode = accountMenu({ api: auth });
-
-	accountMenuNode.data.onchange(async state => {
-		if (state.state === 'authenticated') {
-			self.data.content = Todos();
-		} else {
-			self.data.content = html`<div>You need to sign in to add your todo list.</div>`;
-		}
-	});
-
 	const self = html`<div id='app'>
-		<div style='float: right;'>${accountMenuNode}</div>
-		${node('content', html`<div>Loading ...</div>`)}
+		${await AuthenticatedContent({
+			authenticated: () => Todos(),
+			unauthenticated: () => html`<div>
+				You need to sign in to add your todo list.
+			</div>`
+		})}
 	</div>`;
 
 	return self;
 }
 
 export async function generate() {
-	const page = html`
-		<!doctype html>
-		<html>
-			<head>
-				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				<title>Todo App</title>
-			</head>
-			<body>
-				<p><a href='/'>Home</a></p>
-				<h1>Todo App</h1>
-				${await App()}
-			</body>
-		</html>
-	`;
-
-	return page;
+	return Main({
+		pageTitle: 'Todo App',
+		content: await App(),
+	});
 }
 
 hydrate('app', App as any);
