@@ -3,6 +3,7 @@ import {
 	DistributedTable,
 	FileService,
 	PassThruParser,
+	RealtimeService,
 	withContext
 } from 'wirejs-resources';
 
@@ -22,6 +23,7 @@ const userTodos = new DistributedTable('app', 'userTodos', {
 
 const wikiPages = new FileService('app', 'wikiPages');
 const authService = new AuthenticationService('app', 'core-users');
+const realtimeService = new RealtimeService('app', 'realtime');
 
 export const auth = authService.buildApi();
 
@@ -31,6 +33,15 @@ export type Todo = {
 	order: number;
 	list: string;
 };
+
+export const messaging = withContext(context => ({
+	async publish(room: string, message: string) {
+		realtimeService.publish(room, message);
+	},
+	async getRoom(room: string) {
+		return realtimeService.getStream(room);
+	}
+}));
 
 export const todos = withContext(context => ({
 	async read(list?: string): Promise<Todo[]> {
