@@ -1,4 +1,4 @@
-import { html, attribute, hydrate, list } from 'wirejs-dom/v2';
+import { html, attribute, hydrate, list, text } from 'wirejs-dom/v2';
 import { Main } from '../layouts/main.js';
 import { messaging } from 'my-api';
 
@@ -16,11 +16,18 @@ async function App() {
 				<input type='submit' value='Send' />
 			</form>
 		</div>
+		<span style='color: var(--color-muted)'>${text('status', 'Connecting ...')}</span>
 	</div>`.onadd(async () => {
 		const roomStream = await messaging.getRoom(null, 'test');
 		roomStream.subscribe({
-			onmessage: (message: string) => {
+			onopen() {
+				self.data.status = 'Connected';
+			},
+			onmessage(message: string) {
 				self.data.messages.push(message);
+			},
+			onclose() {
+				self.data.status = 'Disconnected. (Refresh the page to reconnect.)';
 			}
 		});
 	})

@@ -36,7 +36,7 @@ export type Todo = {
 
 export const messaging = withContext(context => ({
 	async publish(room: string, message: string) {
-		return realtimeService.publish(room, message);
+		return realtimeService.publish(room, [message]);
 	},
 	async getRoom(room: string) {
 		return realtimeService.getStream(room);
