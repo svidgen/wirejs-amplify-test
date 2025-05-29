@@ -23,7 +23,10 @@ const userTodos = new DistributedTable('app', 'userTodos', {
 
 const wikiPages = new FileService('app', 'wikiPages');
 const authService = new AuthenticationService('app', 'core-users');
-const realtimeService = new RealtimeService('app', 'realtime');
+const realtimeService = new RealtimeService<{
+	username: string;
+	message: string;
+}>('app', 'realtime');
 
 export const auth = authService.buildApi();
 
@@ -36,7 +39,11 @@ export type Todo = {
 
 export const messaging = withContext(context => ({
 	async publish(room: string, message: string) {
-		return realtimeService.publish(room, [message]);
+		const user = await auth.requireCurrentUser(context);
+		return realtimeService.publish(room, [{
+			username: user.username,
+			message
+		}]);
 	},
 	async getRoom(room: string) {
 		return realtimeService.getStream(room);

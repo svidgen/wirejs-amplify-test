@@ -1,11 +1,21 @@
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { html, attribute, hydrate, list, text } from 'wirejs-dom/v2';
 import { Main } from '../layouts/main.js';
 import { messaging } from 'my-api';
 
+type RoomMessage = {
+	username: string;
+	message: string;
+};
+
 async function App() {
 	const self = html`<div id='app'>
 		<h4>Realtime Test</h4>
-		${list('messages', (message: string) => html`<div>${message}</div>`)}
+		${list('messages', (message: RoomMessage) =>
+			html`${DOMPurify.sanitize((
+				marked.parse(`**${message.username}:** ${message.message}`
+			) as string))}`)}
 		<div>
 			<form onsubmit=${(event: Event) => {
 				event.preventDefault();
@@ -23,14 +33,14 @@ async function App() {
 			onopen() {
 				self.data.status = 'Connected';
 			},
-			onmessage(message: string) {
+			onmessage(message) {
 				self.data.messages.push(message);
 			},
 			onclose() {
 				self.data.status = 'Disconnected. (Refresh the page to reconnect.)';
 			}
 		});
-	})
+	});
 	return self;
 }
 
