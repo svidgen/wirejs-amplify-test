@@ -11,11 +11,11 @@
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6",
 		"wirejs-dom": "^1.0.41",
-		"wirejs-resources": "^0.1.84-realtime",
-		"wirejs-components": "^0.1.27-realtime"
+		"wirejs-resources": "^0.1.85-realtime",
+		"wirejs-components": "^0.1.28-realtime"
 	},
 	"devDependencies": {
-		"wirejs-scripts": "^3.0.82-realtime",
+		"wirejs-scripts": "^3.0.83-realtime",
 		"typescript": "^5.7.3"
 	},
 	"scripts": {
