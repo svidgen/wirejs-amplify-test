@@ -46,10 +46,6 @@ async function Chat() {
 				const randomRoom = Math.random().toString(36).substring(2, 10);
 				self.data.room = randomRoom;
 				self.data.roomChangeForm.dispatchEvent(new Event('submit'));
-				// self.data.messages = [];
-				// self.disconnect();
-				// self.data.status = `Connecting to "${self.data.room}" ...`;
-				// self.connect();
 			}} />
 		</form>
 
@@ -68,8 +64,10 @@ async function Chat() {
 				onmessage(message) {
 					self.data.messages.push(message);
 				},
-				onclose() {
-					self.data.status = 'Disconnected. (Refresh the page to reconnect.)';
+				onclose(reason) {
+					if (reason !== 'unsubscribed') {
+						self.data.status = 'Disconnected. (Refresh the page to reconnect.)';
+					}
 				}
 			});
 		}
