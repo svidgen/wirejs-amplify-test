@@ -11,11 +11,11 @@
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6",
 		"wirejs-dom": "^1.0.41",
-		"wirejs-resources": "^0.1.101-async-api",
-		"wirejs-components": "^0.1.44-async-api"
+		"wirejs-resources": "^0.1.102",
+		"wirejs-components": "^0.1.45"
 	},
 	"devDependencies": {
-		"wirejs-scripts": "^3.0.99-async-api",
+		"wirejs-scripts": "^3.0.100",
 		"typescript": "^5.7.3"
 	},
 	"scripts": {
