@@ -18,7 +18,7 @@ async function Chat() {
 				marked.parse(`**${message.username}:** ${message.body}`
 			) as string))}`)}
 
-		<!-- Input for new messages. -->
+		<!-- New message form -->
 		<form onsubmit=${(event: Event) => {
 			event.preventDefault();
 			chat.publish(null, self.data.room, self.data.message);
@@ -31,7 +31,7 @@ async function Chat() {
 		<!-- Connection status -->
 		<span style='color: var(--color-muted)'>${text('status', 'Connecting ...')}</span>
 
-		<!-- Room selection -->
+		<!-- Room selection form -->
 		<form ${id('roomChangeForm')} onsubmit=${(event: Event) => {
 			event.preventDefault();
 			self.data.messages = [];
@@ -49,8 +49,31 @@ async function Chat() {
 			}} />
 		</form>
 
+		<!-- Countdown form -->
+		<form ${id('countdownForm')} onsubmit=${(event: Event) => {
+			event.preventDefault();
+			if (self.data.countdownDisabled) {
+				// discourage spamming the countdown
+				alert('Countdown is already running. One at a time please!');
+				return;
+			}
+			self.data.countdownDisabled = true;
+			chat.startCountdown(null, self.data.room, self.data.countdownSeconds);
+			self.data.countdownSeconds = 10;
+			setTimeout(() => {
+				self.data.countdownDisabled = false;
+			}, self.data.countdownSeconds * 1000);
+		}}>
+			<input type='hidden' value=${attribute('countdownDisabled', false as boolean)} />
+			<input type='number' style='width: 10rem;'
+				value=${attribute('countdownSeconds', 10 as number)}
+				min='5' max='60' />
+			<input type='submit' style='width: 10rem;' value='Start Counting' />
+		</form>
+
 		<!-- Description -->
 		<p>A simple example of realtime messaging. Messages are 100% ephemeral. If you reload the page, messages are lost. If you're not connected when a message it sent, you won't receive it.</p>
+		<p>The countdown feature is a simple background job that sends a message every second until the countdown reaches zero.</p>
 	</div>`.extend(() => ({
 		disconnect() {
 			// no implementation until connected

@@ -1,16 +1,33 @@
-import { withContext, RealtimeService, AuthenticationApi } from "wirejs-resources";
+import {
+	AuthenticationApi,
+	BackgroundJob,
+	RealtimeService,
+	withContext,
+} from "wirejs-resources";
 
 const realtimeService = new RealtimeService<{
 	username: string;
 	body: string;
 }>('app', 'realtime');
 
-function sanitizedRoomName(room: string | null): string {
-	if (room === null || room === '') {
-		return 'default';
-	}
-	return room.replace(/[^-_a-zA-Z0-9]/g, '-').slice(0, 50);
-}
+const counter = new BackgroundJob('app', 'countdowns', {
+	handler: async (room: string, seconds: number) => {
+		return new Promise<void>((resolve) => {
+			let remaining = seconds;
+			const interval = setInterval(() => {
+				if (remaining <= 0) {
+					clearInterval(interval);
+					resolve();
+				} else {
+					realtimeService.publish(sanitizedRoomName(room), [{
+						username: 'Countdown',
+						body: `Time remaining: ${remaining--} seconds`
+					}]);
+				}
+			}, 1000);
+		});
+	},
+});
 
 export const Chat = (auth: AuthenticationApi) => withContext(context => ({
 	async publish(room: string, message: string) {
@@ -23,5 +40,19 @@ export const Chat = (auth: AuthenticationApi) => withContext(context => ({
 	async getRoom(room: string) {
 		await auth.requireCurrentUser(context);
 		return realtimeService.getStream(sanitizedRoomName(room));
+	},
+	async startCountdown(room: string, seconds: number) {
+		await auth.requireCurrentUser(context);
+		if (seconds < 5 || seconds > 600) {
+			throw new Error('Countdown must be between 5 and 60 seconds.');
+		}
+		await counter.start(sanitizedRoomName(room), seconds);
 	}
 }));
+
+function sanitizedRoomName(room: string | null): string {
+	if (room === null || room === '') {
+		return 'default';
+	}
+	return room.replace(/[^-_a-zA-Z0-9]/g, '-').slice(0, 50);
+}
