@@ -12,9 +12,11 @@ const realtimeService = new RealtimeService<{
 
 const counter = new BackgroundJob('app', 'countdowns', {
 	handler: async (room: string, seconds: number) => {
+		console.log(`Starting countdown in room "${room}" for ${seconds} seconds.`);
 		return new Promise<void>((resolve) => {
 			let remaining = seconds;
 			const interval = setInterval(() => {
+				console.log(`Time remaining in room "${room}": ${remaining} seconds`);
 				if (remaining <= 0) {
 					clearInterval(interval);
 					resolve();
