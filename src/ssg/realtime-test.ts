@@ -52,23 +52,24 @@ async function Chat() {
 		<!-- Countdown form -->
 		<form ${id('countdownForm')} onsubmit=${(event: Event) => {
 			event.preventDefault();
-			if (self.data.countdownDisabled) {
-				// discourage spamming the countdown
-				alert('Countdown is already running. One at a time please!');
-				return;
-			}
 			self.data.countdownDisabled = true;
 			chat.startCountdown(null, self.data.room, self.data.countdownSeconds);
-			self.data.countdownSeconds = 10;
 			setTimeout(() => {
 				self.data.countdownDisabled = false;
 			}, self.data.countdownSeconds * 1000);
 		}}>
-			<input type='hidden' value=${attribute('countdownDisabled', false as boolean)} />
-			<input type='number' style='width: 10rem;'
+			<input type='number'
+				style='width: 10rem;'
 				value=${attribute('countdownSeconds', 10 as number)}
-				min='5' max='60' />
-			<input type='submit' style='width: 10rem;' value='Start Counting' />
+				min='5' max='60'
+				disabled=${attribute('countdownDisabled', false as boolean)}
+			/>
+			<input
+				type='submit'
+				style='width: 10rem;'
+				value='Start Counting'
+				disabled=${attribute('countdownDisabled', false as boolean)}
+			/>
 		</form>
 
 		<!-- Description -->
