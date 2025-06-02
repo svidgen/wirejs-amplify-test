@@ -1,11 +1,11 @@
 import { BackgroundJob, RealtimeService, withContext } from "wirejs-resources";
 
-const llmRealtimeService = new RealtimeService<
-	'**start**' | '**end**' | {
-		role: string;
-		content: string;
-	}
->('app', 'llm');
+export type LLMMessage = '**start**' | '**end**' | {
+	role: string;
+	content: string;
+};
+
+const llmRealtimeService = new RealtimeService<LLMMessage>('app', 'llm');
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: chatOllama
 });
@@ -34,15 +34,14 @@ async function doStream(response: Response, room: string) {
 	// await llmRealtimeService.publish(room, [`**done:** ${message}`]);
 }
 
-async function chatOllama(room: string, prompt: string, history: string[] = []) {
+async function chatOllama(room: string, history: LLMMessage[]) {
 	const response = await fetch('http://localhost:11434/api/chat', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			model: 'llama3.2',
 			messages: [
-				...history,
-				{ role: 'user', content: prompt }
+				...history
 			],
 			stream: true
 		})
@@ -51,11 +50,11 @@ async function chatOllama(room: string, prompt: string, history: string[] = []) 
 }
 
 export const LLM = () => withContext(_context => ({
-	async send(room: string, prompt: string, history: string[] = []) {
-		if (!room || !prompt) {
-			throw new Error('Room and prompt are required');
+	async send(room: string, history: LLMMessage[]) {
+		if (!room || !history || !history.length) {
+			throw new Error('Room and history are required');
 		}
-		chatRunner.start(room, prompt, history);
+		chatRunner.start(room, history);
 	},
 	async getRoom(room: string) {
 		return llmRealtimeService.getStream(room);
