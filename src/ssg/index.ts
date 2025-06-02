@@ -11,6 +11,7 @@ export async function generate() {
 				<li><a href='/todo-app.html'>Todo App</a></li>
 				<li><a href='/simple-wiki/index.html'>Simple Wiki</a></li>
 				<li><a href='/realtime-test.html'>Realtime Test</a></li>
+				<li><a href='/llm-test.html'>LLM Test</a></li>
 			</ul>
 		</div>`
 	})
