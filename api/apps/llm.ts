@@ -40,6 +40,8 @@ async function chatOllama(room: string, history: LLMMessage[]) {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			model: 'llama3.2',
+			// model: 'mistral',
+			// model: 'smollm',
 			messages: [
 				...history
 			],
