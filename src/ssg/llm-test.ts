@@ -25,7 +25,7 @@ async function Chat() {
 					${DOMPurify.sanitize((marked.parse(m.content) as string))}
 				</div>`
 			)}
-			${node('pendingMessage', (md) => md ? html`<div style='color: gray;'>
+			${node('pendingMessage', (md) => md ? html`<div style='color: #333;'>
 				<b>assistant</b><br />
 				${DOMPurify.sanitize((marked.parse(md || '') as string))}
 			</div>` : html`<div></div>`)}
