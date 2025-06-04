@@ -39,8 +39,8 @@ async function chatOllama(room: string, history: LLMMessage[]) {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			model: 'llama3.2',
-			// model: 'mistral',
+			// model: 'llama3.2',
+			model: 'mistral',
 			// model: 'smollm',
 			messages: [
 				{ role: 'system', content: 'You are a helpful assistant.' },
