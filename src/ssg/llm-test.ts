@@ -40,6 +40,7 @@ async function Chat() {
 					content: self.data.message.value.trim()
 				});
 				self.data.message.value = '';
+				self.data.message.style.height = 'auto';
 				self.autoscroll();
 				await llm.send(null, ROOM_NAME, self.data.messages);
 			}}
