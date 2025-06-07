@@ -18,20 +18,16 @@ async function doStream(response: Response, room: string) {
 	const reader = response.body.getReader();
 	const decoder = new TextDecoder('utf-8');
 
-	// let message: string = '';
-	await llmRealtimeService.publish(room, [`**start**`]);
-
+	let message: string = '';
 	while (true) {
 		const { value, done } = await reader.read();
 		if (done) break;
 		const chunk = decoder.decode(value, { stream: true });
-		const message = JSON.parse(chunk).message;
-		await llmRealtimeService.publish(room, [message]);
-		// message += chunk;
+		const chunkMessage = JSON.parse(chunk).message;
+		await llmRealtimeService.publish(room, [chunkMessage]);
+		message += chunkMessage;
 	}
-
-	await llmRealtimeService.publish(room, [`**end**`]);
-	// await llmRealtimeService.publish(room, [`**done:** ${message}`]);
+	return message;
 }
 
 async function chatOllama(room: string, history: LLMMessage[]) {
@@ -39,8 +35,8 @@ async function chatOllama(room: string, history: LLMMessage[]) {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			// model: 'llama3.2',
-			model: 'mistral',
+			model: 'llama3.2',
+			// model: 'mistral',
 			// model: 'smollm',
 			messages: [
 				{ role: 'system', content: 'You are a helpful assistant.' },
@@ -49,7 +45,9 @@ async function chatOllama(room: string, history: LLMMessage[]) {
 			stream: true
 		})
 	});
+	await llmRealtimeService.publish(room, [`**start**`]);
 	await doStream(response, room);
+	await llmRealtimeService.publish(room, [`**end**`]);
 }
 
 export const LLM = () => withContext(_context => ({

@@ -40,6 +40,8 @@ async function Chat() {
 					content: self.data.message.value.trim()
 				});
 				self.data.message.value = '';
+				self.data.message.disabled = true;
+				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
 				self.autoscroll();
 				await llm.send(null, ROOM_NAME, self.data.messages);
@@ -104,7 +106,8 @@ async function Chat() {
 					}
 				}}
 			></textarea>
-			<input type='submit' value='&gt;' style='width: 2em;' />
+			<input ${id('submitButton', HTMLInputElement)}
+				type='submit' value='&gt;' style='width: 2em;' />
 		</form>
 
 		<!-- Connection status -->
@@ -127,6 +130,8 @@ async function Chat() {
 				onmessage(message) {
 					if (message === '**start**') {
 						self.data.pendingMessage = '';
+						self.data.message.disabled = true;
+						self.data.submitButton.disabled = true;
 					} else if (message === '**end**') {
 						console.log('Message ended:', self.data.pendingMessage);
 						self.data.messages.push({
@@ -134,6 +139,8 @@ async function Chat() {
 							content: self.data.pendingMessage
 						});
 						self.data.pendingMessage = '';
+						self.data.message.disabled = false;
+						self.data.submitButton.disabled = false;
 					} else {
 						self.data.pendingMessage += message.content;
 					}
