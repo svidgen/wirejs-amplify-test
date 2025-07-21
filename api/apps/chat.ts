@@ -41,7 +41,7 @@ export const Chat = (auth: AuthenticationApi) => withContext(context => ({
 	},
 	async getRoom(room: string) {
 		await auth.requireCurrentUser(context);
-		return realtimeService.getStream(sanitizedRoomName(room));
+		return realtimeService.getStream(context, sanitizedRoomName(room));
 	},
 	async startCountdown(room: string, seconds: number) {
 		await auth.requireCurrentUser(context);

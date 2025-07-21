@@ -2,7 +2,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { html, id, hydrate, node, } from 'wirejs-dom/v2';
 import type { AuthenticationMachineState, Context } from 'wirejs-resources';
-import { auth, wiki } from 'my-api';
+import { auth, wiki } from 'internal-api';
 import { AuthMonitor } from 'wirejs-components/utils';
 import { Main } from '../../layouts/main.js';
 

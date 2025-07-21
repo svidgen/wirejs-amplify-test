@@ -5,24 +5,28 @@
 	"type": "module",
 	"workspaces": [
 		"src",
-		"api"
+		"api",
+		"web-worker"
 	],
 	"dependencies": {
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6",
-		"wirejs-dom": "^1.0.41",
-		"wirejs-resources": "^0.1.102",
-		"wirejs-components": "^0.1.45"
+		"wirejs-components": "^0.1.49-payments",
+		"wirejs-dom": "^1.0.42",
+		"wirejs-module-payments-stripe": "^0.1.0-payments",
+		"wirejs-resources": "^0.1.106-payments",
+		"wirejs-web-worker": "^1.0.3-payments"
 	},
 	"devDependencies": {
-		"wirejs-scripts": "^3.0.100",
-		"typescript": "^5.7.3"
+		"typescript": "^5.7.3",
+		"wirejs-scripts": "^3.0.104-payments"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",
 		"prestart": "npm run prestart --workspaces --if-present",
-		"start": "wirejs-scripts start",
-		"build": "wirejs-scripts build"
+		"start": "wirejs-scripts ws-run-parallel start",
+		"start:public": "wirejs-scripts ws-run-parallel start:public",
+		"build": "npm run build --workspaces --if-present"
 	},
 	"engines": {
 		"node": ">=20.0.0"

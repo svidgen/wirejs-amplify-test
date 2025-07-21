@@ -6,4 +6,5 @@ src/build_id.json
 api/index.client.js
 api/index.js
 api/dist
+workers/dist
 *.swp

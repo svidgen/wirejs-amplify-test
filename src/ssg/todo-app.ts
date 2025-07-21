@@ -1,6 +1,6 @@
 import { html, list, attribute, hydrate } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
-import { todos, Todo } from 'my-api';
+import { todos, Todo } from 'internal-api';
 import { Main } from '../layouts/main.js';
 
 function Todos() {
