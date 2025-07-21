@@ -76,7 +76,7 @@ export const Admin = (auth: AuthenticationApi) => withContext(context => {
 			await api.requireAdmin();
 			return context.systemInfo.map(attr => ({
 				name: attr.name,
-				value: attr.value,
+				value: attr.value || '',
 				description: attr.description
 			})).toArray();
 		},
