@@ -5,7 +5,7 @@ import {
 	withContext,
 } from "wirejs-resources";
 
-const permanentAdmins = ['admin'];
+const permanentAdmins = ['admin', 'iambipedal@gmail.com'];
 
 export type Setting = {
 	key: string;
