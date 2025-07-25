@@ -1,6 +1,6 @@
 import { html, list, attribute, hydrate } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
-import { store, Product, Transaction, SubscriptionLine } from 'internal-api';
+import { store, Product, Transaction } from 'internal-api';
 import { Main } from '../layouts/main.js';
 
 type LineItem = {
@@ -8,6 +8,14 @@ type LineItem = {
 	productName: string;
 	price: string;
 	quantity: number;
+}
+
+type SubscriptionLine = Awaited<ReturnType<
+	typeof store.listSubscriptions>
+>[number];
+
+function renderAmount(inCents: number) {
+	return `$${(inCents/100).toFixed(2)}`;
 }
 
 function Storefront() {
@@ -29,7 +37,7 @@ function Storefront() {
 						self.data.cart.push({
 							productId: p.id,
 							productName: p.name,
-							price: `\$${(p.unitAmount/100).toFixed(2)}`,
+							price: `${renderAmount(p.unitAmount)}`,
 							quantity: 1
 						});
 					}
@@ -67,17 +75,17 @@ function Storefront() {
 		<table>
 			<tr>
 				<th>date</th>
-				<th>amount<th>
+				<th>amount</th>
 				<th>items</th>
 			</tr>
 			${list('transactions', (t: Transaction) => html`<tr>
 				<td>${new Date(t.createdAt).toLocaleDateString()}</td>
-				<td>\$${(t.amount/100).toFixed(2)}</td>
+				<td>${renderAmount(t.amount)}</td>
 				<td><table>
 					${(t.items || []).map(li => html`<tr>
 						<td>${li.description}</td>
 						<td>x ${li.quantity}</td>
-						<td>= \$${(li.amount/100).toFixed(2)}</td>
+						<td>= ${renderAmount(li.amount)}</td>
 					</tr>`)}
 				</table></td>
 			</tr>`)}
@@ -87,12 +95,13 @@ function Storefront() {
 		<table>
 			<tr>
 				<th>Name</th>
-				<th>Price</th>
+				<th colspan='2'>Price</th>
 				<th></th>
 			</tr>
 			${list('plans', (p: Product) => html`<tr>
 				<td>${p.name}</td>
-				<td>${(p.unitAmount/100).toFixed(2)}/${p.interval}</td>
+				<td>${renderAmount(p.unitAmount)}</td>
+				<td>per ${p.interval}</td>
 				<td
 					style='color: darkgreen; font-weight: bold; cursor: pointer;'
 					onclick=${() => {
@@ -107,12 +116,13 @@ function Storefront() {
 		<table>
 			<tr>
 				<th>Name</th>
-				<th>Price</th>
+				<th colspan='2'>Price</th>
 				<th></th>
 			</tr>
 			${list('planCart', (p: Product) => html`<tr>
 				<td>${p.name}</td>
-				<td>${(p.unitAmount/100).toFixed(2)}/${p.interval}</td>
+				<td>${renderAmount(p.unitAmount)}</td>
+				<td>per ${p.interval}</td>
 				<td><span
 					style='color: darkred; font-weight: bold; cursor: pointer;'
 					onclick=${() => {
@@ -136,10 +146,37 @@ function Storefront() {
 			</form>
 		</div>
 
-		<h4>Subscriptions</h4>
-		<table>${list('subscriptions', (s: SubscriptionLine) => html`<li>
-			${JSON.stringify(s)}
-		</li>`)}</table>
+		<h4>Active Subscriptions</h4>
+		<table>
+			<tr>
+				<th>Plan</th>
+				<th colspan='2'>Quantity</th>
+				<th colspan='2'>Amount</th>
+				<th></th>
+			</tr>
+			${list('subscriptions', (s: SubscriptionLine) => html`<tr>
+				<td>${s.name}</td>
+				<td>${s.quantity}</td>
+				<td>x</td>
+				<td>${renderAmount(s.amount)}</td>
+				<td>per ${s.interval}</td>
+				<td><span
+					style='color: darkred; font-weight: bold; cursor: pointer;'
+					onclick=${async () => {
+						const yes = confirm("Are you sure?");
+						if (!yes) return;
+						try {
+							await store.cancelSubscription(null, s.id);
+							self.data.subscriptions.splice(
+								self.data.subscriptions.indexOf(s), 1
+							);
+						} catch (error) {
+							alert(error);
+						}
+					}}
+				>cancel</span></td>
+			</tr>`)}
+		</table>
 
 	<div>`.onadd(async self => {
 		const products = await store.listProducts(null);

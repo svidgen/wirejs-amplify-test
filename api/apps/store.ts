@@ -100,6 +100,18 @@ export const Store = (auth: AuthenticationApi) => withContext(context => ({
 	},
 	async listSubscriptions() {
 		const user = await auth.requireCurrentUser(context);
-		return payments.listSubscriptions(user.id);
+		const subs = await payments.listSubscriptions(user.id);
+		return subs.filter(s => s.status === 'active').map(s => ({
+			...s,
+			name: plans.find(p => p.id === s.productId)!.name
+		}));
+	},
+	async cancelSubscription(subscriptionLineId: string) {
+		const user = await auth.requireCurrentUser(context);
+		const existing = await payments.getSubscriptionLine(subscriptionLineId);
+		if (existing?.customerId !== user.id) {
+			throw new Error("Subscription doesn't exist for this user.");
+		}
+		await payments.cancelSubscriptionLine(subscriptionLineId)
 	}
 }));
