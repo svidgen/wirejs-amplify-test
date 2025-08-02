@@ -50,7 +50,7 @@ async function chatOllama(room: string, history: LLMMessage[]) {
 	await llmRealtimeService.publish(room, [`**end**`]);
 }
 
-export const LLM = () => withContext(_context => ({
+export const LLM = () => withContext(context => ({
 	async send(room: string, history: LLMMessage[]) {
 		if (!room || !history || !history.length) {
 			throw new Error('Room and history are required');
@@ -58,6 +58,6 @@ export const LLM = () => withContext(_context => ({
 		chatRunner.start(room, history);
 	},
 	async getRoom(room: string) {
-		return llmRealtimeService.getStream(room);
+		return llmRealtimeService.getStream(context, room);
 	}
 }));

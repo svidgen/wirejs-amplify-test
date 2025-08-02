@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { html, id, css, attribute, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, LLMMessage } from 'my-api';
+import { llm, LLMMessage } from 'internal-api';
 
 const ROOM_NAME = 'llm-demo-room';
 
