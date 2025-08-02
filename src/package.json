@@ -5,6 +5,11 @@
 	"type": "module",
 	"dependencies": {
 		"wirejs-dom": "*",
-		"my-api": "*"
+		"internal-api": "*"
+	},
+	"scripts": {
+		"build": "cd .. && wirejs-scripts build",
+		"start": "cd .. && wirejs-scripts start",
+		"start:public": "cd .. && wirejs-scripts start --public"
 	}
 }

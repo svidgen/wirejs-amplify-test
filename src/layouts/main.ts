@@ -1,5 +1,5 @@
 import { html, node, hydrate } from 'wirejs-dom/v2';
-import { auth } from 'my-api';
+import { auth } from 'internal-api';
 import { AccountMenu } from '../components/index.js';
 import type { AuthenticationState } from 'wirejs-resources';
 

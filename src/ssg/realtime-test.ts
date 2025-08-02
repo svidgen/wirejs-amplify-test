@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { html, attribute, hydrate, list, text, id } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { chat } from 'my-api';
+import { chat } from 'internal-api';
 
 type RoomMessage = {
 	username: string;

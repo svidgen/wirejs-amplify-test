@@ -50,7 +50,7 @@ form div {
 	margin-bottom: 1rem;
 }
 
-label, input, button {
+label, input, select, button {
 	display: inline-block;
 	width: 9rem;
 	margin: 0.25rem;
@@ -62,12 +62,16 @@ label {
 	color: var(--color-muted);
 }
 
-input {
+input, select {
 	width: 20rem;
 	border: 1px solid var(--border-color-muted);
 	margin-bottom: 0.5rem;
 	padding: 0.5rem;
 	font-size: medium;
+}
+
+select {
+	width: 21rem;
 }
 
 textarea {
