@@ -19,7 +19,7 @@ export const todos = Todos(auth);
 export const wiki = Wiki(auth);
 export const store = Store(auth);
 export const admin = Admin(auth);
-export const llm = LLM();
+export const llm = LLM(auth);
 
 new Endpoint('app', 'sample-endpoint', {
 	description: "Sample endpoint to show dynamic endpoint creation.",

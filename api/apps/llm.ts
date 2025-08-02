@@ -1,4 +1,10 @@
-import { BackgroundJob, RealtimeService, withContext } from "wirejs-resources";
+import {
+	AuthenticationApi,
+	BackgroundJob,
+	RealtimeService,
+	User,
+	withContext
+} from "wirejs-resources";
 
 export type LLMMessage = '**start**' | '**end**' | {
 	role: string;
@@ -50,14 +56,29 @@ async function chatOllama(room: string, history: LLMMessage[]) {
 	await llmRealtimeService.publish(room, [`**end**`]);
 }
 
-export const LLM = () => withContext(context => ({
+const assertIsAuthorized = (user: User, room: string) => {
+	if (!room.startsWith(`${user.id}-`)) {
+		throw new Error("Not authorized");
+	}
+}
+
+export const LLM = (auth: AuthenticationApi) => withContext(context => ({
 	async send(room: string, history: LLMMessage[]) {
+		const user = await auth.requireCurrentUser(context);
+		assertIsAuthorized(user, room);
 		if (!room || !history || !history.length) {
 			throw new Error('Room and history are required');
 		}
 		chatRunner.start(room, history);
 	},
 	async getRoom(room: string) {
+		const user = await auth.requireCurrentUser(context);
+		assertIsAuthorized(user, room);
 		return llmRealtimeService.getStream(context, room);
+	},
+	async createRoom() {
+		const user = await auth.requireCurrentUser(context);
+		const id = crypto.randomUUID();
+		return `${user.id}-${id}`.slice(0, 50); // max RT channel size
 	}
 }));

@@ -5,14 +5,16 @@ import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
 import { llm, LLMMessage } from 'internal-api';
 
-const ROOM_NAME = 'llm-demo-room';
-
 const sheet = css`
 	.messages {
 		height: calc(100vh - 30rem);
 		overflow: scroll;
 	}
 `;
+
+function formatMessage(message: string): string {
+	return DOMPurify.sanitize(marked.parse(message) as string);
+}
 
 async function Chat() {
 	const self = html`<div id='chat'>
@@ -22,12 +24,12 @@ async function Chat() {
 			${list('messages', (m: Exclude<LLMMessage, string>) =>
 				html`<div>
 					<b>${m.role}</b><br />
-					${DOMPurify.sanitize((marked.parse(m.content) as string))}
+					${formatMessage(m.content)}
 				</div>`
 			)}
 			${node('pendingMessage', (md) => md ? html`<div style='color: #333;'>
 				<b>assistant</b><br />
-				${DOMPurify.sanitize((marked.parse(md || '') as string))}
+				${formatMessage(md || '')}
 			</div>` : html`<div></div>`)}
 		</div>
 
@@ -35,6 +37,13 @@ async function Chat() {
 		<form ${id('messageForm', HTMLFormElement)}
 			onsubmit=${async (event: Event) => {
 				event.preventDefault();
+				if (!self.activeRoom) {
+					self.data.messages.push({
+						role: 'system',
+						content: "Not connected!"
+					});
+					return;
+				}
 				self.data.messages.push({
 					role: 'user',
 					content: self.data.message.value.trim()
@@ -44,7 +53,7 @@ async function Chat() {
 				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
 				self.autoscroll();
-				await llm.send(null, ROOM_NAME, self.data.messages);
+				await llm.send(null, self.activeRoom, self.data.messages);
 			}}
 		><textarea
 				${id('message', HTMLTextAreaElement)}
@@ -114,6 +123,7 @@ async function Chat() {
 		<span style='color: var(--color-muted)'>${text('status', 'Connecting ...')}</span>
 
 	</div>`.extend(() => ({
+		activeRoom: undefined as string | undefined,
 		autoscroll() {
 			self.data.messageContainer.scrollTop = 
 				self.data.messageContainer.scrollHeight;
@@ -122,10 +132,11 @@ async function Chat() {
 			// no implementation until connected
 		},
 		async connect() {
-			const roomStream = await llm.getRoom(null, ROOM_NAME);
+			self.activeRoom = await llm.createRoom(null);
+			const roomStream = await llm.getRoom(null, self.activeRoom);
 			self.disconnect = roomStream.subscribe({
 				onopen() {
-					self.data.status = `Connected to "${ROOM_NAME}".`;
+					self.data.status = `Connected to "${self.activeRoom}".`;
 				},
 				onmessage(message) {
 					if (message === '**start**') {
