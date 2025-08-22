@@ -19,7 +19,7 @@ export const store = Store(auth);
 export const admin = Admin(auth);
 
 new Endpoint('app', 'sample-endpoint', {
-	description: "Sample endpoint to show dynamic endpoint creation.",
+	description: "Sample endpoint to show programmatic endpoint creation.",
 	handle(context) {
 		context.responseHeaders['Content-Type'] = 'text/html; charset=utf-8';
 		return "<html><body><p>Hello!</p><p><a href='/'>Back.</a></body></html>";
@@ -28,7 +28,7 @@ new Endpoint('app', 'sample-endpoint', {
 
 new Endpoint('app', 'sample-wildcard-endpoint', {
 	path: 'wildcard-endpoint/%',
-	description: "Sample endpoint to show dynamic wildcard endpoint creation.",
+	description: "Sample endpoint to show programmatic wildcard endpoint creation.",
 	handle(context) {
 		context.responseHeaders['Content-Type'] = 'text/html; charset=utf-8';
 		return `<html>
