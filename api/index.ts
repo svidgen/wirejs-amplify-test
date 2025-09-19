@@ -4,7 +4,9 @@ import { Todos } from './apps/todos.js';
 import { Wiki } from './apps/wiki.js';
 import { Store } from './apps/store.js';
 import { Admin } from './apps/admin.js';
+import { LLM } from './apps/llm.js';
 
+export type * from './apps/llm.js';
 export type * from './apps/todos.js';
 export type * from './apps/store.js';
 export type * from './apps/admin.js';
@@ -17,6 +19,7 @@ export const todos = Todos(auth);
 export const wiki = Wiki(auth);
 export const store = Store(auth);
 export const admin = Admin(auth);
+export const llm = LLM(auth);
 
 new Endpoint('app', 'sample-endpoint', {
 	description: "Sample endpoint to show programmatic endpoint creation.",
