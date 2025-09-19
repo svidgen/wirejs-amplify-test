@@ -3,61 +3,34 @@ import {
 	BackgroundJob,
 	RealtimeService,
 	User,
+	LLM as LLMResource,
+	LLMMessage,
 	withContext
 } from "wirejs-resources";
 
-export type LLMMessage = '**start**' | '**end**' | {
-	role: string;
-	content: string;
-};
+export type Message = '**start**' | '**end**' | LLMMessage;
 
-const llmRealtimeService = new RealtimeService<LLMMessage>('app', 'llm');
+const llm = new LLMResource('app', 'llm', { 
+	models: ['claude-haiku', 'llama3.2', 'llama3:8b', 'llama2']
+});
+const llmRealtimeService = new RealtimeService<Message>('app', 'llm');
+
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
-	handler: chatOllama
+	handler: async (room: string, history: LLMMessage[]) => {
+		await llmRealtimeService.publish(room, [`**start**`]);
+		await llm.continueConversation([
+			{ role: 'system', content: 'You are a helpful (but generally concise) assistant.'},
+			...history
+		], chunk => {
+			llmRealtimeService.publish(room, [chunk.message]);
+		})
+		await llmRealtimeService.publish(room, [`**end**`]);
+	}
 });
 
-async function doStream(response: Response, room: string) {
-	if (!response.ok || !response.body) {
-		throw new Error(`Failed to fetch: ${response.status} ${response.statusText}`);
-	}
-
-	const reader = response.body.getReader();
-	const decoder = new TextDecoder('utf-8');
-
-	let message: string = '';
-	while (true) {
-		const { value, done } = await reader.read();
-		if (done) break;
-		const chunk = decoder.decode(value, { stream: true });
-		const chunkMessage = JSON.parse(chunk).message;
-		await llmRealtimeService.publish(room, [chunkMessage]);
-		message += chunkMessage;
-	}
-	return message;
-}
-
-async function chatOllama(room: string, history: LLMMessage[]) {
-	const response = await fetch('http://localhost:11434/api/chat', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			model: 'llama3.2',
-			// model: 'mistral',
-			// model: 'smollm',
-			messages: [
-				{ role: 'system', content: 'You are a helpful assistant.' },
-				...history
-			],
-			stream: true
-		})
-	});
-	await llmRealtimeService.publish(room, [`**start**`]);
-	await doStream(response, room);
-	await llmRealtimeService.publish(room, [`**end**`]);
-}
 
 const assertIsAuthorized = (user: User, room: string) => {
-	if (!room.startsWith(`${user.id}-`)) {
+	if (!room.startsWith(`${user.id}/`)) {
 		throw new Error("Not authorized");
 	}
 }
@@ -79,6 +52,6 @@ export const LLM = (auth: AuthenticationApi) => withContext(context => ({
 	async createRoom() {
 		const user = await auth.requireCurrentUser(context);
 		const id = crypto.randomUUID();
-		return `${user.id}-${id}`.slice(0, 50); // max RT channel size
+		return `${user.id}/${id}`;
 	}
 }));

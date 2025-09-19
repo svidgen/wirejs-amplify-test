@@ -3,12 +3,19 @@ import DOMPurify from 'dompurify';
 import { html, id, css, attribute, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, LLMMessage } from 'internal-api';
+import { llm, Message } from 'internal-api';
 
 const sheet = css`
 	.messages {
 		height: calc(100vh - 30rem);
 		overflow: scroll;
+	}
+	.flex-row {
+		display: flex;
+		flex-direction: row;
+	}
+	.flex-row > textarea {
+		margin-right: 10px;
 	}
 `;
 
@@ -21,7 +28,7 @@ async function Chat() {
 		${sheet}
 		<!-- All messages. Markdown formatted. Sanitized. -->
 		<div ${id('messageContainer', HTMLDivElement)} class='messages'>
-			${list('messages', (m: Exclude<LLMMessage, string>) =>
+			${list('messages', (m: Exclude<Message, string>) =>
 				html`<div>
 					<b>${m.role}</b><br />
 					${formatMessage(m.content)}
@@ -38,10 +45,7 @@ async function Chat() {
 			onsubmit=${async (event: Event) => {
 				event.preventDefault();
 				if (!self.activeRoom) {
-					self.data.messages.push({
-						role: 'system',
-						content: "Not connected!"
-					});
+					self.data.pendingMessage = "<b>Not connected!</b>";
 					return;
 				}
 				self.data.messages.push({
@@ -52,10 +56,17 @@ async function Chat() {
 				self.data.message.disabled = true;
 				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
+				self.data.pendingMessage = '<i>Thinking ...</i>';
 				self.autoscroll();
-				await llm.send(null, self.activeRoom, self.data.messages);
+				llm.send(null, self.activeRoom, self.data.messages).catch(error => {
+					console.error(error);
+					self.data.pendingMessage = '<b>Error. Try again.</b>';
+					self.data.message.disabled = false;
+					self.data.submitButton.disabled = false;
+				});
 			}}
-		><textarea
+		><div class='flex-row'>
+			<textarea
 				${id('message', HTMLTextAreaElement)}
 				autocomplete="on"
 				autocorrect="on"
@@ -63,7 +74,7 @@ async function Chat() {
 				type='text'
 				style="
 					width: calc(100% - 5rem);
-					height: 1.5em;
+					height: auto;
 					tab-size: 4;
 				"
 				oninput=${() => {
@@ -116,17 +127,24 @@ async function Chat() {
 				}}
 			></textarea>
 			<input ${id('submitButton', HTMLInputElement)}
-				type='submit' value='&gt;' style='width: 2em;' />
-		</form>
+				type='submit' value='&gt;' style='width: 2em; height: 2em;' />
+		</div></form>
 
 		<!-- Connection status -->
 		<span style='color: var(--color-muted)'>${text('status', 'Connecting ...')}</span>
 
 	</div>`.extend(() => ({
 		activeRoom: undefined as string | undefined,
+		isScrolledDownWithinMargin(margin: number) {
+			const container = self.data.messageContainer;
+			const scrollTop = container.scrollTop;
+			const scrollHeight = container.scrollHeight;
+			const clientHeight = container.clientHeight;
+			return (scrollHeight - (scrollTop + clientHeight)) <= margin;
+		},
 		autoscroll() {
-			self.data.messageContainer.scrollTop = 
-				self.data.messageContainer.scrollHeight;
+			const container = self.data.messageContainer;
+			container.scrollTop = container.scrollHeight - container.clientHeight;
 		},
 		disconnect() {
 			// no implementation until connected
@@ -134,32 +152,41 @@ async function Chat() {
 		async connect() {
 			self.activeRoom = await llm.createRoom(null);
 			const roomStream = await llm.getRoom(null, self.activeRoom);
+			let isThinking = false;
 			self.disconnect = roomStream.subscribe({
 				onopen() {
-					self.data.status = `Connected to "${self.activeRoom}".`;
+					self.data.status = `Connected.`;
 				},
 				onmessage(message) {
+					const startedAtBottom = self.isScrolledDownWithinMargin(50);
 					if (message === '**start**') {
-						self.data.pendingMessage = '';
+						isThinking = true;
+						self.data.pendingMessage = '<i>Thinking ...</i>';
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else if (message === '**end**') {
-						console.log('Message ended:', self.data.pendingMessage);
+						isThinking = false;
 						self.data.messages.push({
 							role: 'assistant',
 							content: self.data.pendingMessage
 						});
 						self.data.pendingMessage = '';
-						self.data.message.disabled = false;
 						self.data.submitButton.disabled = false;
+						self.data.message.disabled = false;
+						self.data.message.focus();
 					} else {
-						self.data.pendingMessage += message.content;
+						if (isThinking) {
+							self.data.pendingMessage = message.content;
+						} else {
+							self.data.pendingMessage += message.content;
+						}
+						isThinking = false;
 					}
-					self.autoscroll();
+					if (startedAtBottom) self.autoscroll();
 				},
 				onclose(reason) {
 					if (reason !== 'unsubscribed') {
-						self.data.status = 'Disconnected. (Refresh the page to reconnect.)';
+						self.data.status = 'Disconnected. (Refresh to try reconnecting.)';
 					}
 				}
 			});
@@ -167,23 +194,23 @@ async function Chat() {
 	}))
 	.onadd(async () => {
 		self.connect();
+		self.data.message.value = '';
 	});
 	return self;
 }
 
 async function App() {
 	return html`<div id='app'>
-		<h4>Realtime Demo</h4>
 		${await AuthenticatedContent({
 			authenticated: Chat,
-			unauthenticated: () => html`<p>Sign in for the realtime demo.</p>`
+			unauthenticated: () => html`<p>Sign in for the LLM demo.</p>`
 		})}
 	</div>`;
 }
 
 export async function generate() {
 	return Main({
-		pageTitle: 'Welcome!',
+		pageTitle: 'LLM Demo',
 		content: await App()
 	})
 }
