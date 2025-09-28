@@ -42,7 +42,7 @@ export const LLM = (auth: AuthenticationApi) => withContext(context => ({
 		if (!room || !history || !history.length) {
 			throw new Error('Room and history are required');
 		}
-		chatRunner.start(room, history);
+		await chatRunner.start(room, history);
 	},
 	async getRoom(room: string) {
 		const user = await auth.requireCurrentUser(context);
