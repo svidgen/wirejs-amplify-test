@@ -11,7 +11,7 @@ import {
 export type Message = '**start**' | '**end**' | LLMMessage;
 
 const llm = new LLMResource('app', 'llm', { 
-	models: ['meta.llama3-2-90b-instruct-v1:0', 'llama3.2', 'llama3:8b', 'llama2']
+	models: ['us.meta.llama3-2-90b-instruct-v1:0', 'llama3.2', 'llama3:8b', 'llama2']
 });
 const llmRealtimeService = new RealtimeService<Message>('app', 'llm');
 
