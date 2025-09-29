@@ -1,22 +1,30 @@
 import {
 	AuthenticationApi,
 	BackgroundJob,
-	RealtimeService,
-	User,
 	LLM as LLMResource,
 	LLMMessage,
+	RealtimeService,
+	Setting,
+	User,
 	withContext
 } from "wirejs-resources";
 
 export type Message = '**start**' | '**end**' | LLMMessage;
 
+const modelsOverride = new Setting('app', 'models', {
+	private: false,
+	init: () => 'llama3.2, llama3:8b, llama2'
+});
+
 const llm = new LLMResource('app', 'llm', { 
-	models: ['us.meta.llama3-2-90b-instruct-v1:0', 'llama3.2', 'llama3:8b', 'llama2']
+	models: ['llama3.2', 'llama3:8b', 'llama2']
 });
 const llmRealtimeService = new RealtimeService<Message>('app', 'llm');
 
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, history: LLMMessage[]) => {
+		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
+		if (overrides.length > 0) llm.models = overrides;
 		await llmRealtimeService.publish(room, [`**start**`]);
 		await llm.continueConversation([
 			{ role: 'system', content: 'You are a helpful (but generally concise) assistant.'},
