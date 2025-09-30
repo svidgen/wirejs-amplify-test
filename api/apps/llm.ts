@@ -1,7 +1,7 @@
 import {
 	AuthenticationApi,
 	BackgroundJob,
-	LLM as LLMResource,
+	LLM as LLMService,
 	LLMMessage,
 	RealtimeService,
 	Setting,
@@ -16,8 +16,9 @@ const modelsOverride = new Setting('app', 'models', {
 	init: () => 'llama3.2, llama3:8b, llama2'
 });
 
-const llm = new LLMResource('app', 'llm', { 
-	models: ['llama3.2', 'llama3:8b', 'llama2']
+const llm = new LLMService('app', 'llm', { 
+	models: ['llama3.2', 'llama3:8b', 'llama2'],
+	systemPrompt: 'You are a helpful (but generally concise) assistant.'
 });
 const llmRealtimeService = new RealtimeService<Message>('app', 'llm');
 
@@ -26,12 +27,10 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) llm.models = overrides;
 		await llmRealtimeService.publish(room, [`**start**`]);
-		await llm.continueConversation([
-			{ role: 'system', content: 'You are a helpful (but generally concise) assistant.'},
-			...history
-		], chunk => {
-			llmRealtimeService.publish(room, [chunk.message]);
-		})
+		await llm.continueConversation(
+			[ ...history ],
+			chunk => llmRealtimeService.publish(room, [chunk.message])
+		);
 		await llmRealtimeService.publish(room, [`**end**`]);
 	}
 });
