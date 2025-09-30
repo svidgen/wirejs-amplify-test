@@ -3,13 +3,15 @@ import {
 	BackgroundJob,
 	LLM as LLMService,
 	LLMMessage,
+	LLMChunk,
 	RealtimeService,
 	Setting,
 	User,
 	withContext
 } from "wirejs-resources";
 
-export type Message = '**start**' | '**end**' | LLMMessage;
+export type Chunk = '**start**' | '**end**' | LLMChunk;
+export type Message = LLMMessage;
 
 const modelsOverride = new Setting('app', 'models', {
 	private: false,
@@ -20,7 +22,7 @@ const llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
 	systemPrompt: 'You are a helpful (but generally concise) assistant.'
 });
-const llmRealtimeService = new RealtimeService<Message>('app', 'llm');
+const llmRealtimeService = new RealtimeService<Chunk>('app', 'llm');
 
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, history: LLMMessage[]) => {
@@ -29,7 +31,7 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 		await llmRealtimeService.publish(room, [`**start**`]);
 		await llm.continueConversation(
 			[ ...history ],
-			chunk => llmRealtimeService.publish(room, [chunk.message])
+			chunk => llmRealtimeService.publish(room, [chunk])
 		);
 		await llmRealtimeService.publish(room, [`**end**`]);
 	}

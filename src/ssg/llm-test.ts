@@ -1,9 +1,9 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { html, id, css, attribute, hydrate, list, text, node } from 'wirejs-dom/v2';
+import { html, id, css, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, Message } from 'internal-api';
+import { llm, Chunk, Message } from 'internal-api';
 
 const sheet = css`
 	.messages {
@@ -153,18 +153,19 @@ async function Chat() {
 			self.activeRoom = await llm.createRoom(null);
 			const roomStream = await llm.getRoom(null, self.activeRoom);
 			let isThinking = false;
+			let chunks: Exclude<Chunk, string>[] = [];
 			self.disconnect = roomStream.subscribe({
 				onopen() {
 					self.data.status = `Connected.`;
 				},
-				onmessage(message) {
+				onmessage(chunk) {
 					const startedAtBottom = self.isScrolledDownWithinMargin(50);
-					if (message === '**start**') {
+					if (chunk === '**start**') {
 						isThinking = true;
 						self.data.pendingMessage = '<i>Thinking ...</i>';
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
-					} else if (message === '**end**') {
+					} else if (chunk === '**end**') {
 						isThinking = false;
 						self.data.messages.push({
 							role: 'assistant',
@@ -176,10 +177,15 @@ async function Chat() {
 						self.data.message.focus();
 					} else {
 						if (isThinking) {
-							self.data.pendingMessage = message.content;
+							chunks = [chunk];
 						} else {
-							self.data.pendingMessage += message.content;
+							chunks.push(chunk);
 						}
+
+						self.data.pendingMessage = chunks.sort((a, b) => {
+							return a.created_at > b.created_at ? 1 : -1;
+						}).map(c => c.message.content).join('');
+
 						isThinking = false;
 					}
 					if (startedAtBottom) self.autoscroll();
