@@ -9,8 +9,15 @@ import {
 	User,
 	withContext
 } from "wirejs-resources";
+import { randomUUID } from 'crypto';
 
-export type Chunk = '**start**' | '**end**' | LLMChunk;
+export type Chunk = {
+	mid: string;
+	seq: number;
+	pad: string; // security padding
+	data: '**start**' | '**end**' | LLMChunk;
+}
+
 export type Message = LLMMessage;
 
 const modelsOverride = new Setting('app', 'models', {
@@ -24,16 +31,35 @@ const llm = new LLMService('app', 'llm', {
 });
 const llmRealtimeService = new RealtimeService<Chunk>('app', 'llm');
 
+const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
+
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, history: LLMMessage[]) => {
 		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) llm.models = overrides;
-		await llmRealtimeService.publish(room, [`**start**`]);
+		const mid = randomUUID();
+		let seq = 0;
+		await llmRealtimeService.publish(room, [{
+			mid,
+			seq: seq++,
+			pad: pad(),
+			data: `**start**`
+		}]);
 		await llm.continueConversation(
 			[ ...history ],
-			chunk => llmRealtimeService.publish(room, [chunk])
+			chunk => llmRealtimeService.publish(room, [{
+				mid,
+				seq: seq++,
+				pad: pad(),
+				data: chunk
+			}])
 		);
-		await llmRealtimeService.publish(room, [`**end**`]);
+		await llmRealtimeService.publish(room, [{
+			mid,
+			seq,
+			pad: pad(),
+			data: `**end**`
+		}]);
 	}
 });
 
