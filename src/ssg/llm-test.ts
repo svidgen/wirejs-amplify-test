@@ -75,7 +75,7 @@ class Message {
 		let md: string[] = [];
 		for (const c of this.chunks) {
 			if (typeof c.data !== 'string') {
-				md.push(c.data.message.content);
+				md.push(c.data.text);
 			}
 		}
 

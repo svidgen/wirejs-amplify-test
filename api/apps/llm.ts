@@ -15,10 +15,14 @@ export type Chunk = {
 	mid: string;
 	seq: number;
 	pad: string; // security padding
-	data: '**start**' | '**end**' | LLMChunk;
+	data: '**start**' | '**end**' | MinimalChunk;
 }
 
 export type Message = LLMMessage;
+
+export type MinimalChunk = {
+	text: string;
+};
 
 const modelsOverride = new Setting('app', 'models', {
 	private: false,
@@ -39,6 +43,8 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 		if (overrides.length > 0) llm.models = overrides;
 		const mid = randomUUID();
 		let seq = 0;
+		let batch: string[] = [];
+		let lastBatch = new Date().getTime();
 		await llmRealtimeService.publish(room, [{
 			mid,
 			seq: seq++,
@@ -47,13 +53,30 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 		}]);
 		await llm.continueConversation(
 			[ ...history ],
-			chunk => llmRealtimeService.publish(room, [{
+			async chunk => {
+				batch.push(chunk.message.content);
+				if (new Date().getTime() - lastBatch > 150) {
+					const text = batch.join('');
+					batch = [];
+					await llmRealtimeService.publish(room, [{
+						mid,
+						seq: seq++,
+						pad: pad(),
+						data: { text }
+					}]);
+					lastBatch = new Date().getTime();
+				}
+			}
+		);
+		if (batch.length > 0) {
+			const text = batch.join('');
+			await llmRealtimeService.publish(room, [{
 				mid,
 				seq: seq++,
 				pad: pad(),
-				data: chunk
-			}])
-		);
+				data: { text }
+			}]);
+		}
 		await llmRealtimeService.publish(room, [{
 			mid,
 			seq,
