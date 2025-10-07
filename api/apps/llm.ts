@@ -9,9 +9,20 @@ import {
 	User,
 	withContext
 } from "wirejs-resources";
+import { randomUUID } from 'crypto';
 
-export type Chunk = '**start**' | '**end**' | LLMChunk;
+export type Chunk = {
+	mid: string;
+	seq: number;
+	pad: string; // security padding
+	data: '**start**' | '**end**' | MinimalChunk;
+}
+
 export type Message = LLMMessage;
+
+export type MinimalChunk = {
+	text: string;
+};
 
 const modelsOverride = new Setting('app', 'models', {
 	private: false,
@@ -24,16 +35,54 @@ const llm = new LLMService('app', 'llm', {
 });
 const llmRealtimeService = new RealtimeService<Chunk>('app', 'llm');
 
+const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
+
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, history: LLMMessage[]) => {
 		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) llm.models = overrides;
-		await llmRealtimeService.publish(room, [`**start**`]);
+		const mid = randomUUID();
+		let seq = 0;
+		let batch: string[] = [];
+		let lastBatch = new Date().getTime();
+		await llmRealtimeService.publish(room, [{
+			mid,
+			seq: seq++,
+			pad: pad(),
+			data: `**start**`
+		}]);
 		await llm.continueConversation(
 			[ ...history ],
-			chunk => llmRealtimeService.publish(room, [chunk])
+			async chunk => {
+				batch.push(chunk.message.content);
+				if (new Date().getTime() - lastBatch > 150) {
+					const text = batch.join('');
+					batch = [];
+					await llmRealtimeService.publish(room, [{
+						mid,
+						seq: seq++,
+						pad: pad(),
+						data: { text }
+					}]);
+					lastBatch = new Date().getTime();
+				}
+			}
 		);
-		await llmRealtimeService.publish(room, [`**end**`]);
+		if (batch.length > 0) {
+			const text = batch.join('');
+			await llmRealtimeService.publish(room, [{
+				mid,
+				seq: seq++,
+				pad: pad(),
+				data: { text }
+			}]);
+		}
+		await llmRealtimeService.publish(room, [{
+			mid,
+			seq,
+			pad: pad(),
+			data: `**end**`
+		}]);
 	}
 });
 
