@@ -37,7 +37,7 @@ class Message {
 	constructor(role: Role, body: string = '', isDone: boolean = true) {
 		this.isDone = isDone;
 		this.role = role;
-		this.view.data.body = body;
+		this.view.data.body = formatMessage(body);
 	}
 
 	get isDone() {
@@ -60,8 +60,12 @@ class Message {
 		this.view.data.role = role;
 	}
 
-	get content() {
+	get body() {
 		return this.view.data.body;
+	}
+
+	set body(content: string) {
+		this.view.data.body = formatMessage(content);
 	}
 
 	appendChunk(chunk: Chunk) {
@@ -75,7 +79,7 @@ class Message {
 			}
 		}
 
-		this.view.data.body = formatMessage(md.join(''));
+		this.body = md.join('');
 
 		if (chunk.data === '**start**') {
 			this.isDone = false;
@@ -94,7 +98,7 @@ async function Chat() {
 		<!-- All messages. Markdown formatted. Sanitized. -->
 		<div ${id('messageContainer', HTMLDivElement)} class='messages'>
 			${list('messages', (m: Message) => m.view)}
-			${node('status', (md) => md ? html`<div style='color: #333;'>
+			${node('messageStatus', (md) => md ? html`<div style='color: #333;'>
 				${formatMessage(md || '')}
 			</div>` : html`<div></div>`)}
 		</div>
@@ -112,11 +116,11 @@ async function Chat() {
 				self.data.message.disabled = true;
 				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
-				self.data.status = '<i>Thinking ...</i>';
+				self.data.messageStatus = '<i>Thinking ...</i>';
 				self.autoscroll();
 				llm.send(null, self.activeRoom, self.data.messages.map(m => ({
 					role: m.role,
-					content: m.content,
+					content: m.body,
 				}))).catch(error => {
 					console.error(error);
 					self.data.status = '<b>Error. Try again.</b>';
@@ -232,12 +236,12 @@ async function Chat() {
 
 					if (!message.isDone) {
 						isThinking = true;
-						self.data.status = '<i>Thinking ...</i>';
+						self.data.messageStatus = '💫';
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else {
 						isThinking = false;
-						self.data.status = '';
+						self.data.messageStatus = '';
 						self.data.submitButton.disabled = false;
 						self.data.message.disabled = false;
 						self.data.message.focus();
