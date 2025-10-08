@@ -90,7 +90,7 @@ class Message {
 }
 
 async function Chat() {
-	const messageIndex = new Map<string, Message>();
+	const messageIndex = new Map<number, Message>();
 
 	const self = html`<div id='chat'>
 		${sheet}

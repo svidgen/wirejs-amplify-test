@@ -1,9 +1,10 @@
 import {
 	AuthenticationApi,
 	BackgroundJob,
+	DistributedTable,
 	LLM as LLMService,
 	LLMMessage,
-	LLMChunk,
+	PassThruParser,
 	RealtimeService,
 	Setting,
 	User,
@@ -12,11 +13,24 @@ import {
 import { randomUUID } from 'crypto';
 
 export type Chunk = {
-	mid: string;
+	mid: number;
 	seq: number;
 	pad: string; // security padding
 	data: '**start**' | '**end**' | MinimalChunk;
 }
+
+export type Conversation = {
+	userId: string;
+	roomId: string;
+	name: string;
+};
+
+export type ConversationMessage = {
+	userIdRoomId: string;
+	mid: number;
+	role: 'user' | 'assistant';
+	chunks: Chunk[];
+};
 
 export type Message = LLMMessage;
 
@@ -33,7 +47,24 @@ const llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
 	systemPrompt: 'You are a helpful (but generally concise) assistant.'
 });
+
 const llmRealtimeService = new RealtimeService<Chunk>('app', 'llm');
+
+const conversations = new DistributedTable('app', 'llm-conversations', {
+	parse: PassThruParser<Conversation>,
+	key: {
+		partition: { field: 'userId', type: 'string' },
+		sort: { field: 'roomId', type: 'string' }
+	}
+});
+
+const messages = new DistributedTable('app', 'llm-messages', {
+	parse: PassThruParser<ConversationMessage>,
+	key: {
+		partition: { field: 'userIdRoomId', type: 'string' },
+		sort: { field: 'mid', type: 'number' }
+	}
+});
 
 const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
@@ -41,7 +72,7 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, history: LLMMessage[]) => {
 		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) llm.models = overrides;
-		const mid = randomUUID();
+		const mid = history.length;
 		let seq = 0;
 		let batch: string[] = [];
 		let lastBatch = new Date().getTime();
