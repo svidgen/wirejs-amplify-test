@@ -68,46 +68,136 @@ const messages = new DistributedTable('app', 'llm-messages', {
 
 const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
+const callTools = async (message: string): Promise<string | undefined> => {
+	try {
+		const toolCall = message.match(/<tool\-call>(.+)<\/tool\-call>/s);
+		if (toolCall) {
+			const call = JSON.parse(toolCall[1].trim());
+			console.log('calling tool', call);
+			if (call && call.tool) {
+				const result = await (availableTools as any)[call.tool](
+					...(Array.isArray(call.args) ? call.args : [])
+				);
+				return result;
+			}
+		}
+	} catch (error) {
+		return `<tool-error>${error}</tool-error>`
+	}
+	return undefined;
+}
+
+const availableTools = {
+	async httpGet(url: string) {
+		console.log(`fetching ${url}`);
+		const request = await fetch(url);
+		const body = await request.text();
+		console.log('result', body);
+		return body;
+	}
+};
+
+const availableToolsPrompt = `
+# Tool Calling
+
+You may call any of these functions as part of your response to me if needed.
+
+\`\`\`
+{
+${Object.entries(availableTools)
+	.map(([name, fn]) => `${name}: ${fn.toString()}`)
+	.join('\n')
+}
+}
+\`\`\`
+
+To call a tool, include a tag in your response like this:
+
+<tool-call>
+{
+	tool: "NAME_OF_TOOL",
+	args: <ARRAY OF ARGS>
+}
+</tool-call>
+
+The tool call MUST be a JSON definition of the call stating the name of the tool and argument array
+inside the body of a \`<tool-call>\` tag.
+
+Only one tool call per response can be processed.
+
+Only use tools when interaction with these outside systems is required. Otherwise, just respond normally.
+`;
+
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, history: LLMMessage[]) => {
 		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) llm.models = overrides;
+		
 		const mid = history.length;
 		let seq = 0;
 		let batch: string[] = [];
 		let lastBatch = new Date().getTime();
+		let toolResults: string | undefined = undefined;
+
 		await llmRealtimeService.publish(room, [{
 			mid,
 			seq: seq++,
 			pad: pad(),
 			data: `**start**`
 		}]);
-		await llm.continueConversation(
-			[ ...history ],
-			async chunk => {
-				batch.push(chunk.message.content);
-				if (new Date().getTime() - lastBatch > 150) {
-					const text = batch.join('');
-					batch = [];
-					await llmRealtimeService.publish(room, [{
-						mid,
-						seq: seq++,
-						pad: pad(),
-						data: { text }
-					}]);
-					lastBatch = new Date().getTime();
+
+		do {	
+			const result = await llm.continueConversation(
+				[
+					{
+						role: 'user',
+						content: availableToolsPrompt
+					},
+					...history
+				],
+				async chunk => {
+					batch.push(chunk.message.content);
+					if (new Date().getTime() - lastBatch > 150) {
+						const text = batch.join('');
+						batch = [];
+						await llmRealtimeService.publish(room, [{
+							mid,
+							seq: seq++,
+							pad: pad(),
+							data: { text }
+						}]);
+						lastBatch = new Date().getTime();
+					}
 				}
+			);
+
+			history.push(result);
+
+			if (batch.length > 0) {
+				const text = batch.join('');
+				await llmRealtimeService.publish(room, [{
+					mid,
+					seq: seq++,
+					pad: pad(),
+					data: { text }
+				}]);
+				batch = [];
 			}
-		);
-		if (batch.length > 0) {
-			const text = batch.join('');
-			await llmRealtimeService.publish(room, [{
-				mid,
-				seq: seq++,
-				pad: pad(),
-				data: { text }
-			}]);
-		}
+
+			toolResults = await callTools(result.content);
+
+			if (toolResults) {
+				history.push({
+					role: 'user',
+					content: `<tool-result>\n${toolResults}\n</tool-result>`
+				} satisfies LLMMessage);
+			}
+
+			console.log('result', result);
+		} while (toolResults);
+
+		console.log('full chat history', history);
+
 		await llmRealtimeService.publish(room, [{
 			mid,
 			seq,
