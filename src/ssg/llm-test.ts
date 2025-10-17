@@ -27,6 +27,7 @@ function formatMessage(message: string): string {
 
 class Message {
 	private chunks: Chunk[] = [];
+	private originalContent: string = '';
 
 	view = html`<div style='margin-top: 1em;'>
 		<b>${text('role', 'Assistant' as Role)}</b>
@@ -37,6 +38,7 @@ class Message {
 	constructor(role: Role, body: string = '', isDone: boolean = true) {
 		this.isDone = isDone;
 		this.role = role;
+		this.originalContent = body;
 		this.view.data.body = formatMessage(body);
 	}
 
@@ -60,11 +62,18 @@ class Message {
 		this.view.data.role = role;
 	}
 
+	// Returns the original unformatted content
+	get content(): string {
+		return this.originalContent;
+	}
+
+	// Returns the formatted HTML body for display
 	get body() {
 		return this.view.data.body;
 	}
 
 	set body(content: string) {
+		this.originalContent = content;
 		this.view.data.body = formatMessage(content);
 	}
 
@@ -79,7 +88,9 @@ class Message {
 			}
 		}
 
-		this.body = md.join('');
+		const newContent = md.join('');
+		this.originalContent = newContent;
+		this.view.data.body = formatMessage(newContent);
 
 		if (chunk.data === '**start**') {
 			this.isDone = false;
@@ -111,21 +122,26 @@ async function Chat() {
 					self.data.status = "<b>Not connected!</b>";
 					return;
 				}
-				self.data.messages.push(new Message('user', self.data.message.value.trim()));
+				
+				const userMessage = self.data.message.value.trim();
+				if (!userMessage) return;
+				
+				// Add user message to UI with original text
+				self.data.messages.push(new Message('user', userMessage));
 				self.data.message.value = '';
 				self.data.message.disabled = true;
 				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
 				self.data.messageStatus = '<i>Thinking ...</i>';
 				self.autoscroll();
-				llm.send(null, self.activeRoom, self.data.messages.map(m => ({
-					role: m.role,
-					content: m.body,
-				}))).catch(error => {
+				
+				// Send only the latest user message to the server
+				llm.send(null, self.activeRoom, userMessage).catch(error => {
 					console.error(error);
 					self.data.status = '<b>Error. Try again.</b>';
 					self.data.message.disabled = false;
 					self.data.submitButton.disabled = false;
+					self.data.messageStatus = '';
 				});
 			}}
 		><div class='flex-row'>
@@ -214,6 +230,10 @@ async function Chat() {
 		},
 		async connect() {
 			self.activeRoom = await llm.createRoom(null);
+			
+			// For new rooms, don't load history since there shouldn't be any
+			// History loading would be useful for reconnecting to existing conversations
+			
 			const roomStream = await llm.getRoom(null, self.activeRoom);
 			let isThinking = false;
 			self.disconnect = roomStream.subscribe({
