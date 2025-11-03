@@ -368,7 +368,15 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			toolResults = await callTools(result.content);
 
 			if (toolResults) {
-				// Send tool processing indicator to keep UI in thinking state
+				// Send the tool results as additional content to the current message
+				await llmRealtimeService.publish(room, [{
+					mid: assistantMid,
+					seq: seq++,
+					pad: pad(),
+					data: { text: `\n\n${toolResults}\n\n` }
+				}]);
+
+				// Send tool processing indicator to keep UI in thinking state for continuation
 				await llmRealtimeService.publish(room, [{
 					mid: assistantMid,
 					seq: seq++,
@@ -380,10 +388,10 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 				currentMid++;
 				await storeMessage(room, currentMid, 'tool-result', toolResults);
 				
-				// Add tool results to the conversation history for the next LLM call
+				// Add properly formatted tool results to conversation history for the next LLM call
 				history.push({
 					role: 'user',
-					content: `<tool-result>\n${toolResults}\n</tool-result>`
+					content: `Tool results:\n\n${toolResults}\n\nPlease continue your response, incorporating this information naturally.`
 				} satisfies LLMMessage);
 			}
 		} while (toolResults);
