@@ -16,7 +16,7 @@ export type Chunk = {
 	mid: number;
 	seq: number;
 	pad: string; // security padding
-	data: '**start**' | '**end**' | MinimalChunk;
+	data: '**start**' | '**end**' | '**tool-processing**' | MinimalChunk;
 }
 
 export type Conversation = {
@@ -81,12 +81,12 @@ const callTools = async (message: string): Promise<string | undefined> => {
 		const toolCalls: { tool: string; args: any[] }[] = [];
 		
 		// Simple regex to find JSON code blocks with tool calls
-		const toolCallPattern = /```\s*(\{.+\})\s*```/gs;
+		const toolCallPattern = /```(json)?\s*(.+)\s*```/gs;
 		let match;
 		
 		while ((match = toolCallPattern.exec(message)) !== null) {
 			try {
-				const call = JSON.parse(match[1]);
+				const call = JSON.parse(match[2]);
 				if (call && call.tool) {
 					toolCalls.push(call);
 				}
@@ -104,7 +104,7 @@ const callTools = async (message: string): Promise<string | undefined> => {
 							...(Array.isArray(call.args) ? call.args : [])
 						);
 					} catch (error) {
-						return `<tool-error tool="${call.tool}">${error}</tool-error>`;
+						return `<tool-error tool="${call.tool}">${error} ${(error as any).trace}</tool-error>`;
 					}
 				})
 			);
@@ -121,7 +121,6 @@ const availableTools = {
 		console.log(`fetching ${url}`);
 		const request = await fetch(url);
 		const body = await request.text();
-		// console.log('result', body);
 		return body;
 	}
 };
@@ -129,7 +128,7 @@ const availableTools = {
 const availableToolsPrompt = `
 # Tool Calling
 
-These tool functions are available to you if needed:
+These specific functions (called "tools") are available to you:
 
 \`\`\`
 {
@@ -140,9 +139,9 @@ ${Object.entries(availableTools)
 }
 \`\`\`
 
-**IMPORTANT: Only use tools when external data or actions is required.**
+**IMPORTANT: Use tools when external data or actions is required.**
 
-If you do need to call a tool, use this format:
+To call a tool, use this format in your response:
 
 \`\`\`
 {
@@ -152,10 +151,15 @@ If you do need to call a tool, use this format:
 \`\`\`
 
 Rules:
-1. The tool call MUST be valid JSON in a code block.
+1. The tool call MUST be valid JSON in a code block. (Start and end with three backtick characters.)
 2. Arguments must be an array.
 3. Use double quotes for all JSON strings.
-4. **DO NOT** use tools unless my request is best fulfilled with tool use.
+
+Tools should be used for research or when interaction with an external system.
+
+Please don't talk to me directly about tool use or the rules. Tools are actually facilitated for me invisibly by a message handler. From this point on, I prefer not to even know they exist! Just use them as *necessary*.
+
+Respond in human readable format unless otherwise directed.
 `;
 
 /**
@@ -250,6 +254,10 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 		}]);
 
 		do {
+			console.log('=== LLM Iteration Start ===');
+			console.log('History length:', history.length);
+			console.log('Last 3 history items:', history.slice(-3));
+			
 			const result = await llm.continueConversation(
 				[
 					{
@@ -274,8 +282,13 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 				}
 			);
 
-			// Store the assistant's response
+			console.log('LLM result:', result.content);
+			console.log('=== LLM Iteration End ===');
+
+			// Store the assistant's response (which may contain tool calls)
 			await storeMessage(room, assistantMid, 'assistant', result.content);
+			
+			// Add assistant response to working history
 			history.push(result);
 
 			if (batch.length > 0) {
@@ -289,24 +302,28 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 				batch = [];
 			}
 
+			// Check for and execute any tool calls in the response
 			toolResults = await callTools(result.content);
 
 			if (toolResults) {
+				// Send tool processing indicator to keep UI in thinking state
+				await llmRealtimeService.publish(room, [{
+					mid: assistantMid,
+					seq: seq++,
+					pad: pad(),
+					data: `**tool-processing**`
+				}]);
+
 				// Store tool call and result as separate messages
 				currentMid++;
 				await storeMessage(room, currentMid, 'tool-result', toolResults);
 				
+				// Add tool results to the conversation history for the next LLM call
 				history.push({
 					role: 'user',
 					content: `<tool-result>\n${toolResults}\n</tool-result>`
 				} satisfies LLMMessage);
-				
-				// Prepare for next assistant response
-				currentMid++;
-				assistantMid = currentMid;
 			}
-
-			console.log('result', result);
 		} while (toolResults);
 
 		await llmRealtimeService.publish(room, [{

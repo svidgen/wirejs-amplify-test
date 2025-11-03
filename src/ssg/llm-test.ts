@@ -96,6 +96,9 @@ class Message {
 			this.isDone = false;
 		} else if (chunk.data === '**end**') {
 			this.isDone = true;
+		} else if (chunk.data === '**tool-processing**') {
+			// Keep the message in processing state during tool calls
+			this.isDone = false;
 		}
 	}
 }
@@ -256,7 +259,14 @@ async function Chat() {
 
 					if (!message.isDone) {
 						isThinking = true;
-						self.data.messageStatus = '💫';
+						// Show different status based on chunk type
+						if (chunk.data === '**tool-processing**') {
+							self.data.messageStatus = '💫 Waiting for external resources ...';
+						} else if (chunk.data === '**start**') {
+							self.data.messageStatus = '💫 Thinking ...';
+						} else {
+							self.data.messageStatus = '💫 Writing ...';
+						}
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else {
