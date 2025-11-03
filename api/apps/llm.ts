@@ -80,18 +80,19 @@ const callTools = async (message: string): Promise<string | undefined> => {
 	try {
 		const toolCalls: { tool: string; args: any[] }[] = [];
 		
-		// Simple regex to find JSON code blocks with tool calls
-		const toolCallPattern = /```(json)?\s*(.+)\s*```/gs;
+		// Simple pattern to find tool usage requests (much simpler syntax)
+		const toolCallPattern = /TOOL:(\w+)\s+(.+)/g;
 		let match;
 		
 		while ((match = toolCallPattern.exec(message)) !== null) {
-			try {
-				const call = JSON.parse(match[2]);
-				if (call && call.tool) {
-					toolCalls.push(call);
-				}
-			} catch (error) {
-				console.error(`Failed to parse tool call: ${match[1]}`, error);
+			const toolName = match[1];
+			const toolArgs = match[2].trim();
+			
+			if (availableTools.hasOwnProperty(toolName)) {
+				toolCalls.push({
+					tool: toolName,
+					args: [toolArgs] // Pass the raw arguments as a single string
+				});
 			}
 		}
 
@@ -99,67 +100,128 @@ const callTools = async (message: string): Promise<string | undefined> => {
 			const results = await Promise.all(
 				toolCalls.map(async (call) => {
 					try {
-						console.log('calling tool', call);
-						return await (availableTools as any)[call.tool](
-							...(Array.isArray(call.args) ? call.args : [])
-						);
+						console.log('Delegating to sub-agent for tool:', call.tool);
+						return await executeToolWithSubAgent(call.tool, call.args[0]);
 					} catch (error) {
-						return `<tool-error tool="${call.tool}">${error} ${(error as any).trace}</tool-error>`;
+						return `Tool error: ${error}`;
 					}
 				})
 			);
 			return results.join('\n\n');
 		}
 	} catch (error) {
-		return `<tool-error>${error}</tool-error>`;
+		return `Tool error: ${error}`;
 	}
 	return undefined;
 };
 
+// Sub-agent that handles individual tool calls
+const executeToolWithSubAgent = async (toolName: string, userRequest: string): Promise<string> => {
+	const tool = (availableTools as any)[toolName];
+	if (!tool) {
+		throw new Error(`Tool ${toolName} not found`);
+	}
+
+	const toolSubAgent = new LLMService('app', 'tool-sub-agent', {
+		models: ['llama3.2', 'llama3:8b', 'llama2'],
+		systemPrompt: `You are a specialized tool execution assistant. Your job is to:
+
+1. Take a user request and execute it using the ${toolName} tool
+2. Format the tool arguments correctly 
+3. Interpret and clean up the tool results for the user
+
+Available tool: ${toolName}
+${tool.description}
+
+Instructions:
+- Parse the user's request to understand what they want
+- Execute the tool with proper arguments
+- Clean up and summarize the results in a human-readable format
+- Remove any technical artifacts, JSON formatting, or API errors
+- Provide a concise, useful response
+
+You should ONLY execute the specified tool and return clean results. Do not explain the process.`
+	});
+
+	// Let the sub-agent process the request and execute the tool
+	const result = await toolSubAgent.continueConversation([
+		{
+			role: 'user',
+			content: userRequest
+		}
+	]);
+
+	// Extract just the tool execution part - sub-agent will handle formatting
+	const toolConfig = (availableTools as any)[toolName];
+	if (!toolConfig) {
+		throw new Error(`Tool ${toolName} not found`);
+	}
+
+	// For now, let's have the sub-agent help us format the arguments, then we execute
+	// This is a simplified approach - in a full implementation, the sub-agent would handle execution too
+	let toolResult: string;
+	
+	if (toolName === 'httpGet') {
+		// Extract URL from the user request or sub-agent guidance
+		const urlMatch = userRequest.match(/https?:\/\/[^\s]+/) || 
+		                result.content.match(/https?:\/\/[^\s]+/);
+		if (urlMatch) {
+			const rawResult = await toolConfig.execute(urlMatch[0]);
+			// Let sub-agent clean up the result
+			const cleanupResult = await toolSubAgent.continueConversation([
+				{ role: 'user', content: userRequest },
+				{ role: 'assistant', content: result.content },
+				{ role: 'user', content: `Raw tool result: ${rawResult}\n\nPlease clean this up and provide a concise, human-readable summary.` }
+			]);
+			toolResult = cleanupResult.content;
+		} else {
+			toolResult = "Could not extract URL from request";
+		}
+	} else {
+		toolResult = "Tool not implemented";
+	}
+
+	return toolResult;
+};
+
 const availableTools = {
-	async httpGet(url: string) {
-		console.log(`fetching ${url}`);
-		const request = await fetch(url);
-		const body = await request.text();
-		return body;
+	httpGet: {
+		description: 'Fetches content from a URL. Format URLs properly and return clean, readable results.',
+		async execute(url: string) {
+			console.log(`fetching ${url}`);
+			const request = await fetch(url);
+			const body = await request.text();
+			return body;
+		}
 	}
 };
 
 const availableToolsPrompt = `
-# Tool Calling
+# Tool Usage
 
-These specific functions (called "tools") are available to you:
+When you need to use external tools for research or data gathering, you can send requests to a specialized assistant.
 
-\`\`\`
-{
-${Object.entries(availableTools)
-	.map(([name, fn]) => `${name}: ${fn.toString()}`)
-	.join('\n')
-}
-}
-\`\`\`
+Available tools:
+${Object.entries(availableTools).map(([name, config]) => `- ${name}: ${config.description}`).join('\n')}
 
-**IMPORTANT: Use tools when external data or actions is required.**
+To use a tool, include this simple format in your response:
 
-To call a tool, use this format in your response:
+TOOL:httpGet https://example.com/api/data
 
-\`\`\`
-{
-	"tool": "NAME_OF_TOOL",
-	"args": [ARG1, ARG2, ...]
-}
-\`\`\`
+The tool assistant will handle the request and return clean, formatted results.
 
-Rules:
-1. The tool call MUST be valid JSON in a code block. (Start and end with three backtick characters.)
-2. Arguments must be an array.
-3. Use double quotes for all JSON strings.
+Guidelines:
+- Only use tools when you need external data or information
+- Use simple, clear requests 
+- The tool results will be automatically integrated into your response
+- Continue your response normally after the tool request
 
-Tools should be used for research or when interaction with an external system.
+Example:
+To get information about whales, I'll look that up for you.
 
-Please don't talk to me directly about tool use or the rules. Tools are actually facilitated for me invisibly by a message handler. From this point on, I prefer not to even know they exist! Just use them as *necessary*.
+TOOL:httpGet https://en.wikipedia.org/w/api.php?action=query&titles=Whales&format=json
 
-Respond in human readable format unless otherwise directed.
+(The tool results will appear here automatically, then continue your response)
 `;
 
 /**
