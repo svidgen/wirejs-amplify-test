@@ -34,6 +34,7 @@ export type ConversationMessage = {
 	toolCall?: {
 		tool: string;
 		args: any[];
+		instruction?: string;
 	};
 	toolResult?: string;
 	createdAt: number;
@@ -78,20 +79,23 @@ const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
 const callTools = async (message: string): Promise<string | undefined> => {
 	try {
-		const toolCalls: { tool: string; args: any[] }[] = [];
+		const toolCalls: { tool: string; args: any[]; instruction?: string }[] = [];
 		
-		// Simple pattern to find tool usage requests (much simpler syntax)
-		const toolCallPattern = /TOOL:(\w+)\s+(.+)/g;
+		// Enhanced pattern to find tool usage requests with optional instructions
+		// Format: TOOL:toolName url_or_args [INSTRUCTION: special instructions]
+		const toolCallPattern = /TOOL:(\w+)\s+([^\[]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?/g;
 		let match;
 		
 		while ((match = toolCallPattern.exec(message)) !== null) {
 			const toolName = match[1];
 			const toolArgs = match[2].trim();
+			const instruction = match[3] ? match[3].trim() : undefined;
 			
 			if (availableTools.hasOwnProperty(toolName)) {
 				toolCalls.push({
 					tool: toolName,
-					args: [toolArgs] // Pass the raw arguments as a single string
+					args: [toolArgs],
+					instruction
 				});
 			}
 		}
@@ -100,8 +104,8 @@ const callTools = async (message: string): Promise<string | undefined> => {
 			const results = await Promise.all(
 				toolCalls.map(async (call) => {
 					try {
-						console.log('Delegating to sub-agent for tool:', call.tool);
-						return await executeToolWithSubAgent(call.tool, call.args[0]);
+						console.log('Delegating to sub-agent for tool:', call.tool, 'with instruction:', call.instruction);
+						return await executeToolWithSubAgent(call.tool, call.args[0], call.instruction);
 					} catch (error) {
 						return `Tool error: ${error}`;
 					}
@@ -116,10 +120,19 @@ const callTools = async (message: string): Promise<string | undefined> => {
 };
 
 // Sub-agent that handles individual tool calls
-const executeToolWithSubAgent = async (toolName: string, userRequest: string): Promise<string> => {
+const executeToolWithSubAgent = async (toolName: string, userRequest: string, instruction?: string): Promise<string> => {
 	const tool = (availableTools as any)[toolName];
 	if (!tool) {
 		throw new Error(`Tool ${toolName} not found`);
+	}
+
+	// Build the system prompt based on the instruction
+	let processingInstructions = `Clean up and summarize the results in a human-readable format
+- Remove any technical artifacts, JSON formatting, or API errors
+- Provide a concise, useful response`;
+
+	if (instruction) {
+		processingInstructions = `Follow this specific instruction: ${instruction}`;
 	}
 
 	const toolSubAgent = new LLMService('app', 'tool-sub-agent', {
@@ -128,19 +141,19 @@ const executeToolWithSubAgent = async (toolName: string, userRequest: string): P
 
 1. Take a user request and execute it using the ${toolName} tool
 2. Format the tool arguments correctly 
-3. Interpret and clean up the tool results for the user
+3. Interpret and process the tool results for the user
 
 Available tool: ${toolName}
 ${tool.description}
 
-Instructions:
-- Parse the user's request to understand what they want
-- Execute the tool with proper arguments
-- Clean up and summarize the results in a human-readable format
-- Remove any technical artifacts, JSON formatting, or API errors
-- Provide a concise, useful response
+Processing Instructions:
+${processingInstructions}
 
-You should ONLY execute the specified tool and return clean results. Do not explain the process.`
+Instructions:
+1. Parse the user's request to understand what they want
+2. Execute the tool with proper arguments
+3. Process the results according to the processing instructions above
+4. You should ONLY execute the specified tool and return processed results. Do not explain the process.`
 	});
 
 	// Let the sub-agent process the request and execute the tool
@@ -167,11 +180,19 @@ You should ONLY execute the specified tool and return clean results. Do not expl
 		                result.content.match(/https?:\/\/[^\s]+/);
 		if (urlMatch) {
 			const rawResult = await toolConfig.execute(urlMatch[0]);
+			
+			// Build cleanup prompt based on instruction
+			let cleanupPrompt = `Raw tool result: ${rawResult}\n\nPlease clean this up and provide a concise, human-readable summary.`;
+			
+			if (instruction) {
+				cleanupPrompt = `Raw tool result: ${rawResult}\n\nPlease process this data according to these instructions: ${instruction}`;
+			}
+			
 			// Let sub-agent clean up the result
 			const cleanupResult = await toolSubAgent.continueConversation([
 				{ role: 'user', content: userRequest },
 				{ role: 'assistant', content: result.content },
-				{ role: 'user', content: `Raw tool result: ${rawResult}\n\nPlease clean this up and provide a concise, human-readable summary.` }
+				{ role: 'user', content: cleanupPrompt }
 			]);
 			toolResult = cleanupResult.content;
 		} else {
@@ -204,24 +225,24 @@ When you need to use external tools for research or data gathering, you can send
 Available tools:
 ${Object.entries(availableTools).map(([name, config]) => `- ${name}: ${config.description}`).join('\n')}
 
-To use a tool, include this simple format in your response:
+To use a tool, include this format in your response:
 
 TOOL:httpGet https://example.com/api/data
 
-The tool assistant will handle the request and return clean, formatted results.
+For special processing instructions, use the optional INSTRUCTION parameter:
+
+TOOL:httpGet https://example.com/weather [INSTRUCTION: extract only the temperature and conditions]
+
+The tool assistant will handle the request and return results processed according to your instructions.
 
 Guidelines:
 - Only use tools when you need external data or information
 - Use simple, clear requests 
+- Add specific instructions if you need particular formatting or processing
 - The tool results will be automatically integrated into your response
 - Continue your response normally after the tool request
 
-Example:
-To get information about whales, I'll look that up for you.
-
-TOOL:httpGet https://en.wikipedia.org/w/api.php?action=query&titles=Whales&format=json
-
-(The tool results will appear here automatically, then continue your response)
+(The processed tool results will appear here automatically, then continue your response)
 `;
 
 /**
