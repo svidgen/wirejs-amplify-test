@@ -22,7 +22,10 @@ const sheet = css`
 `;
 
 function formatMessage(message: string): string {
-	return DOMPurify.sanitize(marked.parse(message) as string);
+	// Remove tool result tags and their content from user-facing display
+	const cleanedMessage = message.replace(/<tool-result>[\s\S]*?<\/tool-result>/g, '');
+	
+	return DOMPurify.sanitize(marked.parse(cleanedMessage) as string);
 }
 
 class Message {

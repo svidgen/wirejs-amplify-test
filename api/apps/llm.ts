@@ -253,13 +253,9 @@ const getConversationHistory = async (userIdRoomId: string): Promise<LLMMessage[
 				role: msg.role,
 				content: msg.content
 			});
-		} else if (msg.role === 'tool-result') {
-			// Tool results are injected as user messages to the LLM
-			llmHistory.push({
-				role: 'user',
-				content: `<tool-result>\n${msg.content}\n</tool-result>`
-			});
 		}
+		// Note: tool-result messages are no longer stored separately
+		// Tool results are now included in assistant messages
 	}
 	
 	return llmHistory;
@@ -315,6 +311,8 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			data: `**start**`
 		}]);
 
+		let assistantMessageContent = '';
+		
 		do {
 			console.log('=== LLM Iteration Start ===');
 			console.log('History length:', history.length);
@@ -343,12 +341,12 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 					}
 				}
 			);
-
+		
 			console.log('LLM result:', result.content);
 			console.log('=== LLM Iteration End ===');
 
-			// Store the assistant's response (which may contain tool calls)
-			await storeMessage(room, assistantMid, 'assistant', result.content);
+			// Build up the complete assistant message content
+			assistantMessageContent += result.content;
 			
 			// Add assistant response to working history
 			history.push(result);
@@ -368,12 +366,15 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			toolResults = await callTools(result.content);
 
 			if (toolResults) {
-				// Send the tool results as additional content to the current message
+				// Add tool results to the complete assistant message
+				assistantMessageContent += `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n`;
+				
+				// Send the tool results as additional content to the current message, wrapped in tags
 				await llmRealtimeService.publish(room, [{
 					mid: assistantMid,
 					seq: seq++,
 					pad: pad(),
-					data: { text: `\n\n${toolResults}\n\n` }
+					data: { text: `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n` }
 				}]);
 
 				// Send tool processing indicator to keep UI in thinking state for continuation
@@ -383,18 +384,18 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 					pad: pad(),
 					data: `**tool-processing**`
 				}]);
-
-				// Store tool call and result as separate messages
-				currentMid++;
-				await storeMessage(room, currentMid, 'tool-result', toolResults);
 				
-				// Add properly formatted tool results to conversation history for the next LLM call
+				// Add tool results to conversation history in the same format as stored messages
+				// This ensures consistency between live conversation and retrieved history
 				history.push({
 					role: 'user',
-					content: `Tool results:\n\n${toolResults}\n\nPlease continue your response, incorporating this information naturally.`
+					content: `<tool-result>\n${toolResults}\n</tool-result>`
 				} satisfies LLMMessage);
 			}
 		} while (toolResults);
+		
+		// Store the complete assistant message including any tool results
+		await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
 
 		await llmRealtimeService.publish(room, [{
 			mid: assistantMid,
