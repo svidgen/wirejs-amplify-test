@@ -57,6 +57,32 @@ const llm = new LLMService('app', 'llm', {
 	systemPrompt: 'You are a helpful (but generally concise) assistant.'
 });
 
+// Sub-agent for formatting tool arguments from user requests
+const toolArgumentFormatter = new LLMService('app', 'tool-argument-formatter', {
+	models: ['llama3.2', 'llama3:8b', 'llama2'],
+	systemPrompt: `You are a tool argument formatter. Your only job is to:
+1. Examine the user's request 
+2. Extract the exact arguments needed for the specified tool
+3. Return ONLY a JSON array of arguments, nothing else
+
+Examples:
+- User: "get the content from https://example.com" for httpGet tool -> ["https://example.com"]
+- User: "fetch data from api.weather.com/current" for httpGet tool -> ["https://api.weather.com/current"]
+
+Return only the JSON array, no explanations or additional text.`
+});
+
+// Sub-agent for processing tool results according to instructions
+const toolResultProcessor = new LLMService('app', 'tool-result-processor', {
+	models: ['llama3.2', 'llama3:8b', 'llama2'],
+	systemPrompt: `You are a tool result processor. Your job is to:
+1. Take raw tool output
+2. Process it according to the specific instructions given by the user
+3. Return clean, human-readable results, per the user instructions
+
+Follow specific user instructions exactly.`
+});
+
 const llmRealtimeService = new RealtimeService<Chunk>('app', 'llm');
 
 const conversations = new DistributedTable('app', 'llm-conversations', {
@@ -105,7 +131,9 @@ const callTools = async (message: string): Promise<string | undefined> => {
 				toolCalls.map(async (call) => {
 					try {
 						console.log('Delegating to sub-agent for tool:', call.tool, 'with instruction:', call.instruction);
-						return await executeToolWithSubAgent(call.tool, call.args[0], call.instruction);
+						console.log('Tool call args:', call.args);
+						// Pass the original message context, not just the extracted args
+						return await executeToolWithSubAgent(call.tool, message, call.instruction);
 					} catch (error) {
 						return `Tool error: ${error}`;
 					}
@@ -119,90 +147,61 @@ const callTools = async (message: string): Promise<string | undefined> => {
 	return undefined;
 };
 
-// Sub-agent that handles individual tool calls
+// Three-step tool execution with specialized sub-agents
 const executeToolWithSubAgent = async (toolName: string, userRequest: string, instruction?: string): Promise<string> => {
 	const tool = (availableTools as any)[toolName];
 	if (!tool) {
 		throw new Error(`Tool ${toolName} not found`);
 	}
 
-	// Build the system prompt based on the instruction
-	let processingInstructions = `Clean up and summarize the results in a human-readable format
-- Remove any technical artifacts, JSON formatting, or API errors
-- Provide a concise, useful response`;
+	try {
+		console.log(`executeToolWithSubAgent - toolName: ${toolName}, userRequest: "${userRequest}"`);
+		
+		// Step 1: Format tool arguments using dedicated sub-agent
+		const argsPrompt = `Tool: ${toolName}
+Tool Description: ${tool.description}
+User Request: ${userRequest}
 
-	if (instruction) {
-		processingInstructions = `Follow this specific instruction: ${instruction}`;
-	}
-
-	const toolSubAgent = new LLMService('app', 'tool-sub-agent', {
-		models: ['llama3.2', 'llama3:8b', 'llama2'],
-		systemPrompt: `You are a specialized tool execution assistant. Your job is to:
-
-1. Take a user request and execute it using the ${toolName} tool
-2. Format the tool arguments correctly 
-3. Interpret and process the tool results for the user
-
-Available tool: ${toolName}
-${tool.description}
-
-Processing Instructions:
-${processingInstructions}
-
-Instructions:
-1. Parse the user's request to understand what they want
-2. Execute the tool with proper arguments
-3. Process the results according to the processing instructions above
-4. You should ONLY execute the specified tool and return processed results. Do not explain the process.`
-	});
-
-	// Let the sub-agent process the request and execute the tool
-	const result = await toolSubAgent.continueConversation([
-		{
-			role: 'user',
-			content: userRequest
+Extract the arguments needed for this tool and return as a JSON array.`;
+		
+		console.log('Sending to argument formatter:', argsPrompt);
+		
+		const argsResult = await toolArgumentFormatter.continueConversation([
+			{ role: 'user', content: argsPrompt }
+		]);
+		
+		console.log('Argument formatter response:', argsResult.content);
+		
+		// Parse arguments from formatter sub-agent
+		const args = JSON.parse(argsResult.content.trim());
+		console.log('Parsed args:', args);
+		
+		// Step 2: Execute the tool with formatted arguments
+		const rawResult = await tool.execute(...args);
+		
+		// Step 3: Process results using dedicated sub-agent
+		let processingInstruction = `Clean up and summarize the results in a human-readable format. Remove any technical artifacts, JSON formatting, or API errors. Provide a concise, useful response.`;
+		
+		if (instruction) {
+			processingInstruction = instruction;
 		}
-	]);
+		
+		const resultPrompt = `Processing Instruction: ${processingInstruction}
 
-	// Extract just the tool execution part - sub-agent will handle formatting
-	const toolConfig = (availableTools as any)[toolName];
-	if (!toolConfig) {
-		throw new Error(`Tool ${toolName} not found`);
+Raw Tool Result:
+${rawResult}
+
+Please process this result according to the instruction above.`;
+		
+		const processedResult = await toolResultProcessor.continueConversation([
+			{ role: 'user', content: resultPrompt }
+		]);
+		
+		return processedResult.content;
+		
+	} catch (error) {
+		return `Tool execution failed: ${error}`;
 	}
-
-	// For now, let's have the sub-agent help us format the arguments, then we execute
-	// This is a simplified approach - in a full implementation, the sub-agent would handle execution too
-	let toolResult: string;
-	
-	if (toolName === 'httpGet') {
-		// Extract URL from the user request or sub-agent guidance
-		const urlMatch = userRequest.match(/https?:\/\/[^\s]+/) || 
-		                result.content.match(/https?:\/\/[^\s]+/);
-		if (urlMatch) {
-			const rawResult = await toolConfig.execute(urlMatch[0]);
-			
-			// Build cleanup prompt based on instruction
-			let cleanupPrompt = `Raw tool result: ${rawResult}\n\nPlease clean this up and provide a concise, human-readable summary.`;
-			
-			if (instruction) {
-				cleanupPrompt = `Raw tool result: ${rawResult}\n\nPlease process this data according to these instructions: ${instruction}`;
-			}
-			
-			// Let sub-agent clean up the result
-			const cleanupResult = await toolSubAgent.continueConversation([
-				{ role: 'user', content: userRequest },
-				{ role: 'assistant', content: result.content },
-				{ role: 'user', content: cleanupPrompt }
-			]);
-			toolResult = cleanupResult.content;
-		} else {
-			toolResult = "Could not extract URL from request";
-		}
-	} else {
-		toolResult = "Tool not implemented";
-	}
-
-	return toolResult;
 };
 
 const availableTools = {
