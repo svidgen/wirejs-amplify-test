@@ -69,7 +69,7 @@ Examples:
 - User: "get the content from https://example.com" for httpGet tool -> ["https://example.com"]
 - User: "fetch data from api.weather.com/current" for httpGet tool -> ["https://api.weather.com/current"]
 
-Return only the JSON array, no explanations or additional text.`
+IMPORTANT: Return ONLY the raw JSON array. Do NOT wrap it in markdown code blocks or backticks. Do NOT add any explanations.`
 });
 
 // Sub-agent for processing tool results according to instructions
@@ -107,9 +107,12 @@ const callTools = async (message: string): Promise<string | undefined> => {
 	try {
 		const toolCalls: { tool: string; args: any[]; instruction?: string }[] = [];
 		
+		console.log(`[callTools] Processing message: "${message}"`);
+		
 		// Enhanced pattern to find tool usage requests with optional instructions
 		// Format: TOOL:toolName url_or_args [INSTRUCTION: special instructions]
-		const toolCallPattern = /TOOL:(\w+)\s+([^\[]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?/g;
+		// Fixed: Use [^\[\r\n]+ to capture everything up to bracket/newline, not just one char
+		const toolCallPattern = /TOOL:(\w+)\s+([^\[\r\n]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?/g;
 		let match;
 		
 		while ((match = toolCallPattern.exec(message)) !== null) {
@@ -117,12 +120,17 @@ const callTools = async (message: string): Promise<string | undefined> => {
 			const toolArgs = match[2].trim();
 			const instruction = match[3] ? match[3].trim() : undefined;
 			
+			console.log(`[callTools] Regex match: toolName="${toolName}", toolArgs="${toolArgs}", instruction="${instruction}"`);
+			
 			if (availableTools.hasOwnProperty(toolName)) {
 				toolCalls.push({
 					tool: toolName,
 					args: [toolArgs],
 					instruction
 				});
+				console.log(`[callTools] Added tool call:`, { tool: toolName, args: [toolArgs], instruction });
+			} else {
+				console.log(`[callTools] Tool not found: ${toolName}`);
 			}
 		}
 
@@ -172,8 +180,15 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 		
 		console.log('Argument formatter response:', argsResult.content);
 		
+		// Clean the response - remove markdown code blocks if present
+		let cleanedContent = argsResult.content.trim();
+		if (cleanedContent.startsWith('```')) {
+			cleanedContent = cleanedContent.replace(/^```[^\n]*\n/, '').replace(/\n```$/, '');
+		}
+		console.log('Cleaned content for JSON parsing:', cleanedContent);
+		
 		// Parse arguments from formatter sub-agent
-		const args = JSON.parse(argsResult.content.trim());
+		const args = JSON.parse(cleanedContent);
 		console.log('Parsed args:', args);
 		
 		// Step 2: Execute the tool with formatted arguments
@@ -208,10 +223,43 @@ const availableTools = {
 	httpGet: {
 		description: 'Fetches content from a URL. Format URLs properly and return clean, readable results.',
 		async execute(url: string) {
-			console.log(`fetching ${url}`);
-			const request = await fetch(url);
-			const body = await request.text();
-			return body;
+			console.log(`[httpGet] Starting fetch for: ${url}`);
+			
+			try {
+				// Add timeout to prevent hangs
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => {
+					console.log(`[httpGet] Timeout reached for: ${url}`);
+					controller.abort();
+				}, 15000); // 15 second timeout
+				
+				console.log(`[httpGet] Making request to: ${url}`);
+				const request = await fetch(url, { 
+					signal: controller.signal,
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Bot/1.0)'
+					}
+				});
+				
+				clearTimeout(timeoutId);
+				
+				console.log(`[httpGet] Response status: ${request.status} for: ${url}`);
+				
+				if (!request.ok) {
+					throw new Error(`HTTP ${request.status}: ${request.statusText}`);
+				}
+				
+				const body = await request.text();
+				console.log(`[httpGet] Successfully fetched ${body.length} characters from: ${url}`);
+				return body;
+				
+			} catch (error) {
+				console.error(`[httpGet] Error fetching ${url}:`, error);
+				if (error instanceof Error && error.name === 'AbortError') {
+					throw new Error(`Request timeout after 15 seconds for: ${url}`);
+				}
+				throw error;
+			}
 		}
 	}
 };
@@ -232,16 +280,19 @@ For special processing instructions, use the optional INSTRUCTION parameter:
 
 TOOL:httpGet https://example.com/weather [INSTRUCTION: extract only the temperature and conditions]
 
-The tool assistant will handle the request and return results processed according to your instructions.
+IMPORTANT WORKFLOW:
+1. When you need to use a tool, provide a BRIEF statement about what you're doing (1-2 sentences max)
+2. Make your tool request
+3. STOP your response there - do not continue writing
+4. The tool results will be automatically provided
+5. Once you receive the tool results, continue with your full response
 
-Guidelines:
-- Only use tools when you need external data or information
-- Use simple, clear requests 
-- Add specific instructions if you need particular formatting or processing
-- The tool results will be automatically integrated into your response
-- Continue your response normally after the tool request
+Example:
+"I'll fetch the latest information from that website for you.
 
-(The processed tool results will appear here automatically, then continue your response)
+TOOL:httpGet https://example.com"
+
+(Tool results appear automatically, then continue your response normally)
 `;
 
 /**
