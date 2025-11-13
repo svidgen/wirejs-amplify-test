@@ -16,7 +16,7 @@ export type Chunk = {
 	mid: number;
 	seq: number;
 	pad: string; // security padding
-	data: '**start**' | '**end**' | '**tool-processing**' | MinimalChunk;
+	data: '**start**' | '**end**' | '**tool-processing**' | string | MinimalChunk;
 }
 
 export type Conversation = {
@@ -81,6 +81,24 @@ const toolResultProcessor = new LLMService('app', 'tool-result-processor', {
 3. Return clean, human-readable results, per the user instructions
 
 Follow specific user instructions exactly.`
+});
+
+// Sub-agent for generating conversation titles
+const conversationTitleGenerator = new LLMService('app', 'conversation-title-generator', {
+	models: ['llama3.2', 'llama3:8b', 'llama2'],
+	systemPrompt: `You generate short, descriptive conversation titles based on the user's initial message and the assistant's response. 
+
+Rules:
+- Return ONLY the title text, nothing else
+- 3-6 words maximum
+- Capture the main topic or question
+- No quotes, no explanations
+
+Examples:
+- User asks about weather -> "Weather Information Request"
+- User asks to explain quantum physics -> "Quantum Physics Explanation"  
+- User asks for recipe help -> "Recipe Assistance"
+- User asks about programming -> "Programming Question"`
 });
 
 const llmRealtimeService = new RealtimeService<Chunk>('app', 'llm');
@@ -493,6 +511,46 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			// Store the complete assistant message including any tool results
 			await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
 
+			// Generate conversation title after first exchange (if this is a new conversation)
+			if (history.length === 2) { // User message + first assistant response
+				try {
+					const titlePrompt = `User: ${newUserMessage}\n\nAssistant: ${assistantMessageContent}\n\nGenerate a short title for this conversation:`;
+					const titleResult = await conversationTitleGenerator.continueConversation({
+						history: [{ role: 'user', content: titlePrompt }],
+						timeoutSeconds: 10
+					});
+					
+					// Clean the title - remove quotes if they wrap the entire title
+					let cleanTitle = titleResult.content.trim();
+					if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) || 
+					    (cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
+						cleanTitle = cleanTitle.slice(1, -1).trim();
+					}
+					
+					// Store/update conversation record with title
+					const [userId] = room.split('/');
+					const [, roomId] = room.split('/');
+					await conversations.save({
+						userId,
+						roomId,
+						name: cleanTitle,
+						createdAt: Date.now()
+					});
+					
+					// Send title update to client via realtime
+					await llmRealtimeService.publish(room, [{
+						mid: -1, // Special mid for metadata updates
+						seq: 0,
+						pad: pad(),
+						data: `**title-update**:${cleanTitle}`
+					}]);
+					
+					console.log(`Generated conversation title: "${cleanTitle}"`);
+				} catch (error) {
+					console.error('Failed to generate conversation title:', error);
+				}
+			}
+
 			await llmRealtimeService.publish(room, [{
 				mid: assistantMid,
 				seq,
@@ -561,5 +619,43 @@ export const LLM = (auth: AuthenticationApi) => withContext(context => ({
 		const user = await auth.requireCurrentUser(context);
 		const id = crypto.randomUUID();
 		return `${user.id}/${id}`;
+	},
+	async getConversations() {
+		const user = await auth.requireCurrentUser(context);
+		const conversationsGen = conversations.query({
+			by: 'userId-roomId',
+			where: { userId: { eq: user.id } }
+		});
+		const conversationsArray = await fromAsync(conversationsGen);
+		return conversationsArray
+			.sort((a, b) => b.createdAt - a.createdAt) // Most recent first
+			.map(c => ({
+				roomId: `${c.userId}/${c.roomId}`,
+				name: c.name || 'Untitled Conversation',
+				createdAt: c.createdAt
+			}));
+	},
+	async deleteConversation(room: string) {
+		const user = await auth.requireCurrentUser(context);
+		assertIsAuthorized(user, room);
+		
+		// Delete all messages for this conversation
+		const messagesGen = messages.query({
+			by: 'userIdRoomId-mid',
+			where: { userIdRoomId: { eq: room } }
+		});
+		const messagesToDelete = await fromAsync(messagesGen);
+		await Promise.all(messagesToDelete.map(msg => messages.delete(msg)));
+		
+		// Delete conversation record (may not exist for new conversations)
+		const [userId, roomId] = room.split('/');
+		try {
+			await conversations.delete({ userId, roomId });
+		} catch (error) {
+			// Conversation record may not exist yet for new conversations
+			console.log('Conversation record not found, which is OK for new conversations');
+		}
+		
+		return { success: true };
 	}
 }));
