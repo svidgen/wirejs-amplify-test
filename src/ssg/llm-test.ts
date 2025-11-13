@@ -23,7 +23,11 @@ const sheet = css`
 
 function formatMessage(message: string): string {
 	// Remove tool result tags and their content from user-facing display
-	const cleanedMessage = message.replace(/<tool-result>[\s\S]*?<\/tool-result>/g, '');
+	let cleanedMessage = message.replace(/<tool-result>[\s\S]*?<\/tool-result>/g, '');
+	
+	// Only remove TOOL: calls that appear to be complete (followed by newline or end of string)
+	// This prevents partial filtering of incomplete chunks
+	cleanedMessage = cleanedMessage.replace(/TOOL:\w+\s+[^\[\r\n]+?(?:\s*\[INSTRUCTION:\s*[^\]]+\])?\s*(?:\n|$)/g, '');
 	
 	return DOMPurify.sanitize(marked.parse(cleanedMessage) as string);
 }
@@ -93,6 +97,7 @@ class Message {
 
 		const newContent = md.join('');
 		this.originalContent = newContent;
+		// Don't filter here - let formatMessage() handle filtering on render
 		this.view.data.body = formatMessage(newContent);
 
 		if (chunk.data === '**start**') {
@@ -103,6 +108,11 @@ class Message {
 			// Keep the message in processing state during tool calls
 			this.isDone = false;
 		}
+	}
+
+	// Check if the message content contains a tool call
+	hasToolCall(): boolean {
+		return /TOOL:\w+\s+[^\[\r\n]+?(?:\s*\[INSTRUCTION:\s*[^\]]+\])?/.test(this.originalContent);
 	}
 }
 
@@ -262,11 +272,14 @@ async function Chat() {
 
 					if (!message.isDone) {
 						isThinking = true;
-						// Show different status based on chunk type
+						// Show different status based on chunk type and content
 						if (chunk.data === '**tool-processing**') {
 							self.data.messageStatus = '💫 Waiting for external resources ...';
 						} else if (chunk.data === '**start**') {
 							self.data.messageStatus = '💫 Thinking ...';
+						} else if (message.hasToolCall()) {
+							// Immediately switch to external resources status when tool call detected
+							self.data.messageStatus = '💫 Waiting for external resources ...';
 						} else {
 							self.data.messageStatus = '💫 Writing ...';
 						}

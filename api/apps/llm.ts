@@ -52,7 +52,7 @@ const modelsOverride = new Setting('app', 'models', {
 	init: () => 'llama3.2, llama3:8b, llama2'
 });
 
-const llm = new LLMService('app', 'llm', { 
+const llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
 	systemPrompt: 'You are a helpful (but generally concise) assistant.'
 });
@@ -106,22 +106,22 @@ const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 const callTools = async (message: string): Promise<string | undefined> => {
 	try {
 		const toolCalls: { tool: string; args: any[]; instruction?: string }[] = [];
-		
+
 		console.log(`[callTools] Processing message: "${message}"`);
-		
+
 		// Enhanced pattern to find tool usage requests with optional instructions
 		// Format: TOOL:toolName url_or_args [INSTRUCTION: special instructions]
 		// Fixed: Use [^\[\r\n]+ to capture everything up to bracket/newline, not just one char
 		const toolCallPattern = /TOOL:(\w+)\s+([^\[\r\n]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?/g;
 		let match;
-		
+
 		while ((match = toolCallPattern.exec(message)) !== null) {
 			const toolName = match[1];
 			const toolArgs = match[2].trim();
 			const instruction = match[3] ? match[3].trim() : undefined;
-			
+
 			console.log(`[callTools] Regex match: toolName="${toolName}", toolArgs="${toolArgs}", instruction="${instruction}"`);
-			
+
 			if (availableTools.hasOwnProperty(toolName)) {
 				toolCalls.push({
 					tool: toolName,
@@ -164,56 +164,58 @@ const executeToolWithSubAgent = async (toolName: string, userRequest: string, in
 
 	try {
 		console.log(`executeToolWithSubAgent - toolName: ${toolName}, userRequest: "${userRequest}"`);
-		
+
 		// Step 1: Format tool arguments using dedicated sub-agent
 		const argsPrompt = `Tool: ${toolName}
 Tool Description: ${tool.description}
 User Request: ${userRequest}
 
 Extract the arguments needed for this tool and return as a JSON array.`;
-		
+
 		console.log('Sending to argument formatter:', argsPrompt);
-		
-		const argsResult = await toolArgumentFormatter.continueConversation([
-			{ role: 'user', content: argsPrompt }
-		]);
-		
+
+		const argsResult = await toolArgumentFormatter.continueConversation({
+			history: [{ role: 'user', content: argsPrompt }],
+			timeoutSeconds: 15
+		});
+
 		console.log('Argument formatter response:', argsResult.content);
-		
+
 		// Clean the response - remove markdown code blocks if present
 		let cleanedContent = argsResult.content.trim();
 		if (cleanedContent.startsWith('```')) {
 			cleanedContent = cleanedContent.replace(/^```[^\n]*\n/, '').replace(/\n```$/, '');
 		}
 		console.log('Cleaned content for JSON parsing:', cleanedContent);
-		
+
 		// Parse arguments from formatter sub-agent
 		const args = JSON.parse(cleanedContent);
 		console.log('Parsed args:', args);
-		
+
 		// Step 2: Execute the tool with formatted arguments
 		const rawResult = await tool.execute(...args);
-		
+
 		// Step 3: Process results using dedicated sub-agent
 		let processingInstruction = `Clean up and summarize the results in a human-readable format. Remove any technical artifacts, JSON formatting, or API errors. Provide a concise, useful response.`;
-		
+
 		if (instruction) {
 			processingInstruction = instruction;
 		}
-		
+
 		const resultPrompt = `Processing Instruction: ${processingInstruction}
 
 Raw Tool Result:
 ${rawResult}
 
 Please process this result according to the instruction above.`;
-		
-		const processedResult = await toolResultProcessor.continueConversation([
-			{ role: 'user', content: resultPrompt }
-		]);
-		
+
+		const processedResult = await toolResultProcessor.continueConversation({
+			history: [{ role: 'user', content: resultPrompt }],
+			timeoutSeconds: 15
+		});
+
 		return processedResult.content;
-		
+
 	} catch (error) {
 		return `Tool execution failed: ${error}`;
 	}
@@ -224,7 +226,7 @@ const availableTools = {
 		description: 'Fetches content from a URL. Format URLs properly and return clean, readable results.',
 		async execute(url: string) {
 			console.log(`[httpGet] Starting fetch for: ${url}`);
-			
+
 			try {
 				// Add timeout to prevent hangs
 				const controller = new AbortController();
@@ -232,27 +234,27 @@ const availableTools = {
 					console.log(`[httpGet] Timeout reached for: ${url}`);
 					controller.abort();
 				}, 15000); // 15 second timeout
-				
+
 				console.log(`[httpGet] Making request to: ${url}`);
-				const request = await fetch(url, { 
+				const request = await fetch(url, {
 					signal: controller.signal,
 					headers: {
 						'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Bot/1.0)'
 					}
 				});
-				
+
 				clearTimeout(timeoutId);
-				
+
 				console.log(`[httpGet] Response status: ${request.status} for: ${url}`);
-				
+
 				if (!request.ok) {
 					throw new Error(`HTTP ${request.status}: ${request.statusText}`);
 				}
-				
+
 				const body = await request.text();
 				console.log(`[httpGet] Successfully fetched ${body.length} characters from: ${url}`);
 				return body;
-				
+
 			} catch (error) {
 				console.error(`[httpGet] Error fetching ${url}:`, error);
 				if (error instanceof Error && error.name === 'AbortError') {
@@ -313,11 +315,11 @@ const getConversationHistory = async (userIdRoomId: string): Promise<LLMMessage[
 	});
 
 	const llmHistory: LLMMessage[] = [];
-	
+
 	// Convert async generator to array and sort by mid
 	const messagesArray = await fromAsync(storedMessages);
 	messagesArray.sort((a, b) => a.mid - b.mid);
-	
+
 	for (const msg of messagesArray) {
 		if (msg.role === 'user' || msg.role === 'assistant') {
 			llmHistory.push({
@@ -328,7 +330,7 @@ const getConversationHistory = async (userIdRoomId: string): Promise<LLMMessage[
 		// Note: tool-result messages are no longer stored separately
 		// Tool results are now included in assistant messages
 	}
-	
+
 	return llmHistory;
 };
 
@@ -342,138 +344,178 @@ const storeMessage = async (userIdRoomId: string, mid: number, role: Conversatio
 		toolResult,
 		createdAt: Date.now()
 	};
-	
+
 	await messages.save(message);
 	return message;
 };
 
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, newUserMessage: string) => {
-		const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
-		if (overrides.length > 0) llm.models = overrides;
-		
-		// Load conversation history from database
-		const history = await getConversationHistory(room);
-		
-		// Get the next message ID by finding the highest existing mid
-		const existingMessagesGen = messages.query({
-			by: 'userIdRoomId-mid',
-			where: { userIdRoomId: { eq: room } }
-		});
-		const existingMessages = await fromAsync(existingMessagesGen);
-		const nextMid = existingMessages.length > 0 ? 
-			Math.max(...existingMessages.map(m => m.mid)) + 1 : 0;
-		
-		// Store the new user message
-		await storeMessage(room, nextMid, 'user', newUserMessage);
-		history.push({ role: 'user', content: newUserMessage });
-		
-		let currentMid = nextMid + 1;
-		let assistantMid = currentMid; // Track the actual assistant message ID
-		let seq = 0;
-		let batch: string[] = [];
-		let lastBatch = new Date().getTime();
-		let toolResults: string | undefined = undefined;
+		try {
+			const overrides = (await modelsOverride.read()).split(',').map(s => s.trim());
+			if (overrides.length > 0) llm.models = overrides;
 
-		await llmRealtimeService.publish(room, [{
-			mid: assistantMid,
-			seq: seq++,
-			pad: pad(),
-			data: `**start**`
-		}]);
+			// Load conversation history from database
+			const history = await getConversationHistory(room);
 
-		let assistantMessageContent = '';
-		
-		do {
-			console.log('=== LLM Iteration Start ===');
-			console.log('History length:', history.length);
-			console.log('Last 3 history items:', history.slice(-3));
-			
-			const result = await llm.continueConversation(
-				[
-					{
-						role: 'user',
-						content: availableToolsPrompt
-					},
-					...history
-				],
-				async chunk => {
-					batch.push(chunk.message.content);
-					if (new Date().getTime() - lastBatch > 150) {
+			// Get the next message ID by finding the highest existing mid
+			const existingMessagesGen = messages.query({
+				by: 'userIdRoomId-mid',
+				where: { userIdRoomId: { eq: room } }
+			});
+			const existingMessages = await fromAsync(existingMessagesGen);
+			const nextMid = existingMessages.length > 0 ?
+				Math.max(...existingMessages.map(m => m.mid)) + 1 : 0;
+
+			// Store the new user message
+			await storeMessage(room, nextMid, 'user', newUserMessage);
+			history.push({ role: 'user', content: newUserMessage });
+
+			let currentMid = nextMid + 1;
+			let assistantMid = currentMid; // Track the actual assistant message ID
+			let seq = 0;
+			let batch: string[] = [];
+			let lastBatch = new Date().getTime();
+			let toolResults: string | undefined = undefined;
+
+			await llmRealtimeService.publish(room, [{
+				mid: assistantMid,
+				seq: seq++,
+				pad: pad(),
+				data: `**start**`
+			}]);
+
+			let assistantMessageContent = '';
+
+			do {
+				console.log('=== LLM Iteration Start ===');
+				console.log('History length:', history.length);
+				console.log('Last 3 history items:', history.slice(-3));
+
+				try {
+					const result = await llm.continueConversation({
+						history: [
+							{
+								role: 'user',
+								content: availableToolsPrompt
+							},
+							...history
+						],
+						onChunk: async chunk => {
+							batch.push(chunk.message.content);
+							if (new Date().getTime() - lastBatch > 150) {
+								const text = batch.join('');
+								batch = [];
+								await llmRealtimeService.publish(room, [{
+									mid: assistantMid,
+									seq: seq++,
+									pad: pad(),
+									data: { text }
+								}]);
+								lastBatch = new Date().getTime();
+							}
+						},
+						timeoutSeconds: 30
+					});
+
+					console.log('LLM result:', result.content);
+					console.log('=== LLM Iteration End ===');
+
+					// Build up the complete assistant message content
+					assistantMessageContent += result.content;
+
+					// Add assistant response to working history
+					history.push(result);
+
+					if (batch.length > 0) {
 						const text = batch.join('');
-						batch = [];
 						await llmRealtimeService.publish(room, [{
 							mid: assistantMid,
 							seq: seq++,
 							pad: pad(),
 							data: { text }
 						}]);
-						lastBatch = new Date().getTime();
+						batch = [];
 					}
+
+					// Check for and execute any tool calls in the response
+					toolResults = await callTools(result.content);
+
+					if (toolResults) {
+						// Add tool results to the complete assistant message
+						assistantMessageContent += `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n`;
+
+						// Send the tool results as additional content to the current message, wrapped in tags
+						await llmRealtimeService.publish(room, [{
+							mid: assistantMid,
+							seq: seq++,
+							pad: pad(),
+							data: { text: `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n` }
+						}]);
+
+						// Send tool processing indicator to keep UI in thinking state for continuation
+						await llmRealtimeService.publish(room, [{
+							mid: assistantMid,
+							seq: seq++,
+							pad: pad(),
+							data: `**tool-processing**`
+						}]);
+
+						// Add tool results to conversation history in the same format as stored messages
+						// This ensures consistency between live conversation and retrieved history
+						history.push({
+							role: 'user',
+							content: `<tool-result>\n${toolResults}\n</tool-result>`
+						} satisfies LLMMessage);
+					}
+				} catch (llmError) {
+					console.error('=== LLM Error ===');
+					console.error('LLM call failed:', llmError);
+					console.error('History that caused error:', JSON.stringify(history.slice(-3), null, 2));
+
+					// Send error message to user
+					const errorMessage = `I'm experiencing technical difficulties. The LLM service encountered an error: ${llmError instanceof Error ? llmError.message : String(llmError)}`;
+
+					assistantMessageContent += errorMessage;
+
+					await llmRealtimeService.publish(room, [{
+						mid: assistantMid,
+						seq: seq++,
+						pad: pad(),
+						data: { text: errorMessage }
+					}]);
+
+					// Don't continue the loop on LLM errors
+					break;
 				}
-			);
-		
-			console.log('LLM result:', result.content);
-			console.log('=== LLM Iteration End ===');
+			} while (toolResults);
 
-			// Build up the complete assistant message content
-			assistantMessageContent += result.content;
-			
-			// Add assistant response to working history
-			history.push(result);
+			// Store the complete assistant message including any tool results
+			await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
 
-			if (batch.length > 0) {
-				const text = batch.join('');
+			await llmRealtimeService.publish(room, [{
+				mid: assistantMid,
+				seq,
+				pad: pad(),
+				data: `**end**`
+			}]);
+
+		} catch (error) {
+			console.error('=== ChatRunner Fatal Error ===');
+			console.error('ChatRunner handler failed:', error);
+
+			// Try to send error to user if possible
+			try {
 				await llmRealtimeService.publish(room, [{
-					mid: assistantMid,
-					seq: seq++,
+					mid: 0, // fallback mid
+					seq: 0,
 					pad: pad(),
-					data: { text }
+					data: { text: `System error: ${error instanceof Error ? error.message : String(error)}` }
 				}]);
-				batch = [];
+			} catch (publishError) {
+				console.error('Failed to publish error message:', publishError);
 			}
-
-			// Check for and execute any tool calls in the response
-			toolResults = await callTools(result.content);
-
-			if (toolResults) {
-				// Add tool results to the complete assistant message
-				assistantMessageContent += `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n`;
-				
-				// Send the tool results as additional content to the current message, wrapped in tags
-				await llmRealtimeService.publish(room, [{
-					mid: assistantMid,
-					seq: seq++,
-					pad: pad(),
-					data: { text: `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n` }
-				}]);
-
-				// Send tool processing indicator to keep UI in thinking state for continuation
-				await llmRealtimeService.publish(room, [{
-					mid: assistantMid,
-					seq: seq++,
-					pad: pad(),
-					data: `**tool-processing**`
-				}]);
-				
-				// Add tool results to conversation history in the same format as stored messages
-				// This ensures consistency between live conversation and retrieved history
-				history.push({
-					role: 'user',
-					content: `<tool-result>\n${toolResults}\n</tool-result>`
-				} satisfies LLMMessage);
-			}
-		} while (toolResults);
-		
-		// Store the complete assistant message including any tool results
-		await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
-
-		await llmRealtimeService.publish(room, [{
-			mid: assistantMid,
-			seq,
-			pad: pad(),
-			data: `**end**`
-		}]);
+		}
 	}
 });
 
