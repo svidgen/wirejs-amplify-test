@@ -176,7 +176,7 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 
 		const argsResult = await toolArgumentFormatter.continueConversation({
 			history: [{ role: 'user', content: argsPrompt }],
-			timeoutSeconds: 15
+			timeoutSeconds: 30
 		});
 
 		console.log('Argument formatter response:', argsResult.content);
@@ -211,7 +211,7 @@ Please process this result according to the instruction above.`;
 
 		const processedResult = await toolResultProcessor.continueConversation({
 			history: [{ role: 'user', content: resultPrompt }],
-			timeoutSeconds: 15
+			timeoutSeconds: 30
 		});
 
 		return processedResult.content;
