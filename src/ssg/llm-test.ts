@@ -259,7 +259,7 @@ async function Chat() {
 			container.scrollTop = container.scrollHeight - container.clientHeight;
 		},
 		disconnect() {
-			// no implementation until connected
+			// Will be replaced with actual unsubscribe function when connected
 		},
 		
 		async loadConversations() {
@@ -286,12 +286,13 @@ async function Chat() {
 		
 		async loadConversation(roomId: string) {
 			if (!roomId) {
-				// New conversation - don't add to dropdown yet, just create the room
+				// New conversation - just create room, don't save to database yet
+				self.disconnect(); 
 				self.activeRoom = await llm.createRoom(null);
 				self.data.messages.splice(0); // Clear messages
 				messageIndex.clear();
 				
-				// Set dropdown to show "New Conversation" 
+				// Set dropdown to show "New Conversation" but don't add permanent entry yet
 				self.data.conversationSelect.value = "";
 				self.data.deleteConversationBtn.disabled = true; // Can't delete unsaved conversations
 				await self.connect();
@@ -366,7 +367,7 @@ async function Chat() {
 			const select = self.data.conversationSelect;
 			let currentOption = Array.from(select.options).find(opt => opt.value === self.activeRoom);
 			
-			// If no option exists yet (new conversation), create it
+			// If no option exists yet (new conversation getting its first title), create it
 			if (!currentOption && self.activeRoom) {
 				currentOption = document.createElement('option');
 				currentOption.value = self.activeRoom;
@@ -374,9 +375,10 @@ async function Chat() {
 				select.add(currentOption, 1); // Add after "New Conversation" option
 				select.value = self.activeRoom;
 				
-				// Enable delete button now that conversation has content
+				// Enable delete button now that conversation is saved
 				self.data.deleteConversationBtn.disabled = false;
 			} else if (currentOption) {
+				// Update existing option
 				currentOption.text = newTitle;
 			}
 		},
@@ -385,6 +387,9 @@ async function Chat() {
 				console.error('No active room to connect to');
 				return;
 			}
+			
+			// Disconnect any existing connection first
+			self.disconnect();
 			
 			const roomStream = await llm.getRoom(null, self.activeRoom);
 			let isThinking = false;

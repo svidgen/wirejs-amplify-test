@@ -389,6 +389,29 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			await storeMessage(room, nextMid, 'user', newUserMessage);
 			history.push({ role: 'user', content: newUserMessage });
 
+			// If this is the first message (new conversation), save it with timestamped title
+			if (history.length === 1) {
+				const [userId] = room.split('/');
+				const [, roomId] = room.split('/');
+				const timestamp = new Date().toLocaleString();
+				const timestampedTitle = `Conversation ${timestamp}`;
+				
+				await conversations.save({
+					userId,
+					roomId,
+					name: timestampedTitle,
+					createdAt: Date.now()
+				});
+				
+				// Send initial title to client so it appears in dropdown immediately
+				await llmRealtimeService.publish(room, [{
+					mid: -1, // Special mid for metadata updates
+					seq: 0,
+					pad: pad(),
+					data: `**title-update**:${timestampedTitle}`
+				}]);
+			}
+
 			let currentMid = nextMid + 1;
 			let assistantMid = currentMid; // Track the actual assistant message ID
 			let seq = 0;
