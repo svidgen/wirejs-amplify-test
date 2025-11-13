@@ -114,6 +114,11 @@ class Message {
 	hasToolCall(): boolean {
 		return /TOOL:\w+\s+[^\[\r\n]+?(?:\s*\[INSTRUCTION:\s*[^\]]+\])?/.test(this.originalContent);
 	}
+
+	// Check if this message appears to be waiting for tools (has tool call but no tool results yet)
+	isWaitingForTools(): boolean {
+		return this.hasToolCall() && !/<tool-result>/.test(this.originalContent);
+	}
 }
 
 async function Chat() {
@@ -277,10 +282,11 @@ async function Chat() {
 							self.data.messageStatus = '💫 Waiting for external resources ...';
 						} else if (chunk.data === '**start**') {
 							self.data.messageStatus = '💫 Thinking ...';
-						} else if (message.hasToolCall()) {
-							// Immediately switch to external resources status when tool call detected
+						} else if (message.isWaitingForTools()) {
+							// If message has tool calls but no tool results yet, we're waiting for tools
 							self.data.messageStatus = '💫 Waiting for external resources ...';
 						} else {
+							// Otherwise we're writing content
 							self.data.messageStatus = '💫 Writing ...';
 						}
 						self.data.message.disabled = true;
