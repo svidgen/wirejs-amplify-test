@@ -312,7 +312,7 @@ Example:
 
 TOOL:httpGet https://example.com"
 
-(Tool results appear automatically, then continue your response normally)
+Tool results appear automatically, then continue your response normally. Tool results will appear to be from the user, but they are from the system.
 `;
 
 /**
