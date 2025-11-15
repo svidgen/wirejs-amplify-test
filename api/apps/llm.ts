@@ -11,6 +11,7 @@ import {
 	withContext
 } from "wirejs-resources";
 import { randomUUID } from 'crypto';
+import * as cheerio from 'cheerio';
 
 export type Chunk = {
 	mid: number;
@@ -54,7 +55,7 @@ const modelsOverride = new Setting('app', 'models', {
 
 const llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
-	systemPrompt: 'You are a helpful (but generally concise) assistant.'
+	systemPrompt: 'You are a helpful (but generally concise) assistant. CRITICAL: When you make a tool call using TOOL:toolName format, you MUST stop your response immediately. Do NOT provide fake results or continue writing. The system will provide real tool results automatically.'
 });
 
 // Sub-agent for formatting tool arguments from user requests
@@ -127,10 +128,23 @@ const callTools = async (message: string): Promise<string | undefined> => {
 
 		console.log(`[callTools] Processing message: "${message}"`);
 
+		// Skip processing if message contains tool results (already processed or hallucinated)
+		if (message.includes('<tool-result>')) {
+			console.log(`[callTools] Skipping message with existing tool results - this may be LLM hallucination`);
+			return undefined;
+		}
+
+		// Look for tool calls that have content after them (potential hallucination)
+		const toolCallWithHallucinationPattern = /TOOL:\w+[^\n]*\n[\s\S]*<tool-result>/;
+		if (toolCallWithHallucinationPattern.test(message)) {
+			console.log(`[callTools] Detected potential LLM hallucination - tool call with fake results`);
+			return undefined;
+		}
+
 		// Enhanced pattern to find tool usage requests with optional instructions
 		// Format: TOOL:toolName url_or_args [INSTRUCTION: special instructions]
-		// Fixed: Use [^\[\r\n]+ to capture everything up to bracket/newline, not just one char
-		const toolCallPattern = /TOOL:(\w+)\s+([^\[\r\n]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?/g;
+		// Match everything after toolName until newline or INSTRUCTION bracket
+		const toolCallPattern = /TOOL:(\w+)\s+([^\r\n]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?(?=\s*(?:\r?\n|$))/g;
 		let match;
 
 		while ((match = toolCallPattern.exec(message)) !== null) {
@@ -138,7 +152,8 @@ const callTools = async (message: string): Promise<string | undefined> => {
 			const toolArgs = match[2].trim();
 			const instruction = match[3] ? match[3].trim() : undefined;
 
-			console.log(`[callTools] Regex match: toolName="${toolName}", toolArgs="${toolArgs}", instruction="${instruction}"`);
+			console.log(`[callTools] Full regex match:`, match);
+			console.log(`[callTools] Parsed: toolName="${toolName}", toolArgs="${toolArgs}", instruction="${instruction}"`);
 
 			if (availableTools.hasOwnProperty(toolName)) {
 				toolCalls.push({
@@ -171,6 +186,233 @@ const callTools = async (message: string): Promise<string | undefined> => {
 		return `Tool error: ${error}`;
 	}
 	return undefined;
+};
+
+// Utility function to extract text from HTML using cheerio (much more efficient)
+const extractTextFromHtml = (html: string): string => {
+	try {
+		console.log(`[HTML] Starting cheerio extraction from ${html.length} chars`);
+		
+		// Load HTML into cheerio for DOM manipulation
+		const $ = cheerio.load(html);
+		
+		// Remove unwanted elements entirely (more efficient than regex)
+		$('script, style, nav, header, footer, aside').remove();
+		$('.mw-navigation, .navbox, .infobox, .sidebar').remove(); // Wikipedia-specific
+		$('[class*="nav"], [class*="menu"], [class*="sidebar"]').remove(); // Common patterns
+		
+		// Remove common noise elements
+		$('.reference, .citation, sup.reference').remove(); // Citations
+		$('.printfooter, .catlinks').remove(); // Wikipedia footer stuff
+		$('table.ambox, .hatnote').remove(); // Wikipedia message boxes
+		
+		console.log(`[HTML] After removing unwanted elements`);
+		
+		// Extract text from main content areas first (prioritize quality content)
+		let text = '';
+		
+		// Try to get main content first (Wikipedia and other sites)
+		const mainContent = $('#mw-content-text, .mw-parser-output, main, article, .content');
+		if (mainContent.length > 0) {
+			text = mainContent.first().text();
+		} else {
+			// Fallback: get all text from body
+			text = $('body').text();
+		}
+		
+		// Clean up whitespace efficiently
+		text = text
+			.replace(/\s+/g, ' ')                    // Normalize whitespace
+			.replace(/\[\d+\]/g, '')                 // Remove citation numbers [1], [2], etc.
+			.replace(/\s*\n\s*/g, '\n')             // Clean line breaks
+			.replace(/\n{3,}/g, '\n\n')             // Limit consecutive newlines
+			.trim();
+		
+		// Remove common Wikipedia noise patterns
+		text = text
+			.replace(/\s*(Coordinates|Categories|References|External links|See also):.*$/gim, '')
+			.replace(/\s*\[(edit|citation needed|clarification needed)\]/gi, '')
+			.replace(/\s*(Cookie|Privacy Policy|Terms of Service|Subscribe|Newsletter|Advertisement)[^\n]*/gi, '');
+		
+		console.log(`[HTML] Final cheerio extracted text: ${text.length} chars`);
+		return text;
+	} catch (error) {
+		console.error('Error extracting text with cheerio:', error);
+		// Fallback to simple regex approach
+		console.log('[HTML] Falling back to regex extraction');
+		return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+	}
+};
+
+// Utility function to chunk text with overlap
+const chunkTextWithOverlap = (text: string, chunkSize: number = 20000, overlapSize: number = 2000): string[] => {
+	if (text.length <= chunkSize) {
+		return [text];
+	}
+	
+	const chunks: string[] = [];
+	let start = 0;
+	
+	while (start < text.length) {
+		let end = Math.min(start + chunkSize, text.length);
+		
+		// For larger chunks, try multiple natural break points
+		if (end < text.length) {
+			// Look for natural breaks in order of preference
+			const breakPoints = [
+				text.lastIndexOf('\n\n', end),      // Paragraph breaks (best)
+				text.lastIndexOf('. ', end),        // Sentence breaks (good)  
+				text.lastIndexOf('.\n', end),       // End of sentence with newline
+				text.lastIndexOf(', ', end),        // Clause breaks (okay)
+				text.lastIndexOf(' ', end)          // Word breaks (fallback)
+			];
+			
+			// Use the first break point that's in a reasonable position
+			for (const breakPoint of breakPoints) {
+				if (breakPoint > start + chunkSize * 0.7) {
+					end = breakPoint + (text[breakPoint] === '\n' ? 2 : 2); // Include the break character(s)
+					break;
+				}
+			}
+		}
+		
+		chunks.push(text.slice(start, end));
+		start = end - overlapSize; // Create overlap for context continuity
+		
+		// Ensure we don't go backwards
+		if (start <= chunks[chunks.length - 1].length - overlapSize) {
+			start = chunks[chunks.length - 1].length - overlapSize + 1;
+		}
+	}
+	
+	return chunks;
+};
+
+// Memory profiling helper
+const logMemoryUsage = (label: string) => {
+	if (global.gc) {
+		global.gc();
+	}
+	const usage = process.memoryUsage();
+	console.log(`[MEMORY] ${label}:`, {
+		rss: Math.round(usage.rss / 1024 / 1024) + 'MB',
+		heapTotal: Math.round(usage.heapTotal / 1024 / 1024) + 'MB', 
+		heapUsed: Math.round(usage.heapUsed / 1024 / 1024) + 'MB',
+		external: Math.round(usage.external / 1024 / 1024) + 'MB'
+	});
+};
+
+// Chunked processing with map-reduce pattern
+const executeChunkedProcessing = async (content: string, instruction: string): Promise<string> => {
+	try {
+		logMemoryUsage('Start chunked processing');
+		
+		// Extract text if it looks like HTML
+		let processedContent = content;
+		if (content.includes('<html') || content.includes('<!DOCTYPE')) {
+			logMemoryUsage('Before HTML extraction');
+			processedContent = extractTextFromHtml(content);
+			console.log(`Extracted ${processedContent.length} characters of text from HTML`);
+			// Clear original content to free memory
+			content = '';
+			logMemoryUsage('After HTML extraction');
+		}
+
+		// More aggressive size limit to prevent OOM
+		if (processedContent.length > 1500000) { // 1.5MB limit  
+			console.log(`Content too large (${processedContent.length} chars), truncating to 1.5MB`);
+			processedContent = processedContent.substring(0, 1500000) + "\n\n[Content truncated due to size...]";
+		}
+
+		// More conservative chunk sizing to prevent OOM
+		// Reduce chunk size significantly for memory efficiency
+		const maxChunkSize = 8000;  // 8k chars per chunk (reduced from 20k)
+		const overlapSize = 800;    // 800 char overlap (10%)
+		
+		logMemoryUsage('Before chunking');
+		
+		// Chunk the content with overlap
+		let chunks = chunkTextWithOverlap(processedContent, maxChunkSize, overlapSize);
+		console.log(`Split content into ${chunks.length} overlapping chunks (chunk size: ${maxChunkSize})`);
+		
+		// Limit total chunks to prevent excessive processing and OOM
+		const MAX_CHUNKS = 25; // Reasonable limit for memory and processing time
+		if (chunks.length > MAX_CHUNKS) {
+			console.log(`Too many chunks (${chunks.length}), limiting to ${MAX_CHUNKS} and truncating`);
+			chunks = chunks.slice(0, MAX_CHUNKS);
+		}
+		
+		// Clear processed content after chunking to free memory
+		processedContent = '';
+		logMemoryUsage('After chunking, cleared original content');
+
+		// Map: Process each chunk sequentially to avoid memory issues
+		const chunkSummaries: string[] = [];
+		
+		for (let index = 0; index < chunks.length; index++) {
+			const chunk = chunks[index];
+			console.log(`Processing chunk ${index + 1} of ${chunks.length} (${chunk.length} chars)`);
+			logMemoryUsage(`Before processing chunk ${index + 1}`);
+			
+			const chunkPrompt = `Processing chunk ${index + 1} of ${chunks.length}.
+
+Instruction: ${instruction}
+
+Chunk Content:
+${chunk}
+
+Please process this chunk according to the instruction above. Focus on extracting key information and insights.`;
+
+			const result = await toolResultProcessor.continueConversation({
+				history: [{ role: 'user', content: chunkPrompt }],
+				timeoutSeconds: 30 // Reduced timeout for smaller chunks
+			});
+
+			chunkSummaries.push(result.content);
+			
+			// Clear chunk after processing to free memory immediately
+			chunks[index] = '';
+			
+			logMemoryUsage(`After processing chunk ${index + 1}`);
+			
+			// Force garbage collection if available and longer delay
+			if (global.gc) {
+				global.gc();
+			}
+			await new Promise(resolve => setTimeout(resolve, 200));
+		}
+
+		console.log(`Processed ${chunkSummaries.length} chunk summaries`);
+		logMemoryUsage('All chunks processed');
+
+		// Reduce: Combine all chunk summaries into final result
+		const reducePrompt = `You have processed a large document in chunks. Below are the summaries from each chunk. Please combine them into a comprehensive, well-organized final response.
+
+Original Instruction: ${instruction}
+
+Chunk Summaries:
+${chunkSummaries.map((summary, i) => `=== Chunk ${i + 1} Summary ===\n${summary}`).join('\n\n')}
+
+Please create a final, comprehensive response that synthesizes all the information from the chunks above.`;
+
+		logMemoryUsage('Before final synthesis');
+		
+		const finalResult = await toolResultProcessor.continueConversation({
+			history: [{ role: 'user', content: reducePrompt }],
+			timeoutSeconds: 45 // Reduced timeout 
+		});
+
+		// Clear chunk summaries to free memory
+		chunkSummaries.length = 0;
+		
+		logMemoryUsage('After final synthesis');
+		
+		return finalResult.content;
+
+	} catch (error) {
+		console.error('Chunked processing failed:', error);
+		return `Chunked processing failed: ${error}`;
+	}
 };
 
 // Three-step tool execution with specialized sub-agents
@@ -211,9 +453,23 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 		console.log('Parsed args:', args);
 
 		// Step 2: Execute the tool with formatted arguments
+		logMemoryUsage('Before tool execution');
 		const rawResult = await tool.execute(...args);
+		logMemoryUsage('After tool execution');
+		console.log(`Tool returned ${typeof rawResult === 'string' ? rawResult.length + ' characters' : typeof rawResult}`);
 
-		// Step 3: Process results using dedicated sub-agent
+		// Step 3: Check if chunking is needed based on content size
+		const shouldChunk = typeof rawResult === 'string' && rawResult.length > 8000;
+		
+		if (shouldChunk && tool.supportsChunking !== false) {
+			console.log('Large content detected, using chunked processing');
+			const chunkInstruction = instruction || 'Summarize and extract key information from this content.';
+			const result = await executeChunkedProcessing(rawResult, chunkInstruction);
+			logMemoryUsage('After chunked processing complete');
+			return result;
+		}
+
+		// Step 3: Process results using dedicated sub-agent (standard path)
 		let processingInstruction = `Clean up and summarize the results in a human-readable format. Remove any technical artifacts, JSON formatting, or API errors. Provide a concise, useful response.`;
 
 		if (instruction) {
@@ -242,6 +498,7 @@ Please process this result according to the instruction above.`;
 const availableTools = {
 	httpGet: {
 		description: 'Fetches content from a URL. Format URLs properly and return clean, readable results.',
+		supportsChunking: true, // Enable automatic chunking for large web pages
 		async execute(url: string) {
 			console.log(`[httpGet] Starting fetch for: ${url}`);
 
@@ -281,6 +538,67 @@ const availableTools = {
 				throw error;
 			}
 		}
+	},
+	
+	webAnalyzer: {
+		description: 'Fetches and analyzes web pages (URLs) with automatic chunking for comprehensive insights. Use this for Wikipedia pages, articles, or any URL you want to analyze. Perfect for research and extracting key information from websites.',
+		supportsChunking: true,
+		async execute(url: string) {
+			console.log(`[webAnalyzer] Starting comprehensive analysis for: ${url}`);
+
+			try {
+				// Use the same fetch logic as httpGet but optimized for analysis
+				const controller = new AbortController();
+				const timeoutId = setTimeout(() => {
+					console.log(`[webAnalyzer] Timeout reached for: ${url}`);
+					controller.abort();
+				}, 20000); // 20 second timeout for analysis
+
+				console.log(`[webAnalyzer] Fetching content from: ${url}`);
+				const request = await fetch(url, {
+					signal: controller.signal,
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Analyzer/1.0)',
+						'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+					}
+				});
+
+				clearTimeout(timeoutId);
+
+				if (!request.ok) {
+					throw new Error(`HTTP ${request.status}: ${request.statusText}`);
+				}
+
+				const body = await request.text();
+				console.log(`[webAnalyzer] Fetched ${body.length} characters for comprehensive analysis from: ${url}`);
+				
+				// Return raw content - chunking will be handled automatically by executeToolWithSubAgent
+				return body;
+
+			} catch (error) {
+				console.error(`[webAnalyzer] Error analyzing ${url}:`, error);
+				if (error instanceof Error && error.name === 'AbortError') {
+					throw new Error(`Analysis timeout after 20 seconds for: ${url}`);
+				}
+				throw error;
+			}
+		}
+	},
+	
+	textAnalyzer: {
+		description: 'Analyzes TEXT CONTENT ONLY (not URLs). Pass the actual text content to be analyzed with automatic chunking. Do NOT use for URLs - use webAnalyzer or httpGet instead.',
+		supportsChunking: true,
+		async execute(text: string) {
+			console.log(`[textAnalyzer] Starting text analysis for ${text.length} characters`);
+			
+			// Validate that this isn't a URL
+			if (text.startsWith('http://') || text.startsWith('https://')) {
+				throw new Error('textAnalyzer is for text content only. Use webAnalyzer or httpGet for URLs.');
+			}
+			
+			// Simply return the text - chunking will be handled automatically
+			return text;
+		}
 	}
 };
 
@@ -292,27 +610,38 @@ When you need to use external tools for research or data gathering, you can send
 Available tools:
 ${Object.entries(availableTools).map(([name, config]) => `- ${name}: ${config.description}`).join('\n')}
 
+## Tool Selection Guide:
+- For URLs/websites (including Wikipedia): Use **webAnalyzer** or **httpGet**
+- For text content analysis: Use **textAnalyzer** (NOT for URLs)
+
 To use a tool, include this format in your response:
 
-TOOL:httpGet https://example.com/api/data
+TOOL:webAnalyzer https://en.wikipedia.org/wiki/Dinosaur
 
-For special processing instructions, use the optional INSTRUCTION parameter:
+For special processing instructions, use the optional INSTRUCTION parameter. Examples:
 
-TOOL:httpGet https://example.com/weather [INSTRUCTION: extract only the temperature and conditions]
+TOOL:webAnalyzer https://example.com/article [INSTRUCTION: focus on statistics and key findings]
 
-IMPORTANT WORKFLOW:
-1. When you need to use a tool, provide a BRIEF statement about what you're doing (1-2 sentences max)
-2. Make your tool request
-3. STOP your response there - do not continue writing
-4. The tool results will be automatically provided
-5. Once you receive the tool results, continue with your full response
+TOOL:webAnalyzer https://example.com/article [INSTRUCTION: extract important quotes from the page]
 
-Example:
-"I'll fetch the latest information from that website for you.
+CRITICAL WORKFLOW RULES when you need to use a tool. Do these steps EXACTLY:
+1. Tell the user BRIEFLY what you're doing (1 sentence)
+2. Write your tool request using the TOOL: format
+3. IMMEDIATELY STOP responding. (Do NOT write anything else!!!)
 
-TOOL:httpGet https://example.com"
+IMPORTANT:
+- After you finish responding, the system will process your tool request.
+- The system will provide a <tool-result> response that only LOOKS like it comes from the user.
+- The <tool-result> content is NOT visible to the user!
 
-Tool results appear automatically, then continue your response normally. Tool results will appear to be from the user, but they are from the system.
+VERY IMPORTANT: ALL raw <tool-result> responses are invisible to the user. They are not actually from the user!
+
+Here is a CORRECT example of how to respond when the user asks for information about {TOPIC}:
+"I'll analyze the Wikipedia article about {TOPIC} for you.
+
+TOOL:webAnalyzer https://en.wikipedia.org/wiki/{TOPIC} [INSTRUCTION: summarize the article in an LLM friendly format]"
+
+That's it. Stop there and wait for tool results before giving the user a human friendly response.
 `;
 
 /**
