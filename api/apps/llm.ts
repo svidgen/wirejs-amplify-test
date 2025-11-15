@@ -465,6 +465,13 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 		}
 
 		// Step 3: Process results using dedicated sub-agent (standard path)
+		// Extract text from HTML if needed (same logic as chunked processing)
+		let cleanedResult = rawResult;
+		if (typeof rawResult === 'string' && (rawResult.includes('<html') || rawResult.includes('<!DOCTYPE'))) {
+			cleanedResult = extractTextFromHtml(rawResult);
+			console.log(`[Non-chunked] Extracted ${cleanedResult.length} characters of text from HTML`);
+		}
+
 		let processingInstruction = `Clean up and condense the results in a concise format for LLM ingestion to fit within 2k words or less if possible. Don't remove information if you don't have to. But, remove any technical artifacts, JSON formatting, or API errors. Provide a concise, useful response. A response between 100 and 2k words is usually the most appropriate, depending on the raw result size. If results already fit within that range roughly, just remove superfluous stuff that would unnecessarily consume LLM tokens.`;
 
 		if (instruction) {
@@ -474,7 +481,7 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 		const resultPrompt = `Processing Instruction: ${processingInstruction}
 
 Raw Tool Result:
-${rawResult}
+${cleanedResult}
 
 Please process this result according to the instruction above.`;
 
@@ -791,7 +798,8 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
 
 			// Generate conversation title after first exchange (if this is a new conversation)
-			if (history.length === 2) { // User message + first assistant response
+			// Check original message count before any messages were stored in this session
+			if (existingMessages.length === 0) { // This was a brand new conversation
 				try {
 					const titlePrompt = `User: ${newUserMessage}\n\nAssistant: ${assistantMessageContent}\n\nGenerate a short title for this conversation:`;
 					const titleResult = await conversationTitleGenerator.continueConversation({
