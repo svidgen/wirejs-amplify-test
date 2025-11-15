@@ -465,7 +465,7 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 		}
 
 		// Step 3: Process results using dedicated sub-agent (standard path)
-		let processingInstruction = `Clean up and summarize the results in a human-readable format. Remove any technical artifacts, JSON formatting, or API errors. Provide a concise, useful response.`;
+		let processingInstruction = `Clean up and condense the results in a concise format for LLM ingestion to fit within 2k words or less if possible. Don't remove information if you don't have to. But, remove any technical artifacts, JSON formatting, or API errors. Provide a concise, useful response. A response between 100 and 2k words is usually the most appropriate, depending on the raw result size. If results already fit within that range roughly, just remove superfluous stuff that would unnecessarily consume LLM tokens.`;
 
 		if (instruction) {
 			processingInstruction = instruction;
@@ -493,11 +493,7 @@ Please process this result according to the instruction above.`;
 const availableTools = {
 
 	webFetch: {
-		description: [
-			'Fetches web pages and processes information according to instructions.',
-			"Use this tool when it is NECESSARY to fulfill the user's request with information from the web.",
-			'Example:\nTOOL:webFetch https://example.com/some-page [INSTRUCTIONS: summarize and extract the most important quotes in 200 to 2k words depending on original size]\n'
-		].join(' '),
+		description: 'Fetches and analyzes web content. Use when: 1) User asks about specific websites/URLs, 2) User wants latest/recent news or information, 3) Topic changes frequently and your knowledge may be outdated, 4) Conversation critically requires accurate current data, 5) User needs information you would not have from training, 6) User explicitly requests external/web content. Usage: TOOL:webFetch https://example.com [INSTRUCTIONS: your processing instructions]',
 		supportsChunking: true,
 		async execute(url: string) {
 			console.log(`[webFetch] Starting comprehensive analysis for: ${url}`);
@@ -546,27 +542,33 @@ const availableTools = {
 // Initialize LLM service with tool descriptions in system prompt
 llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
-	systemPrompt: `You are a helpful assistant. Answer questions directly from your knowledge whenever possible.
-
-Use tools when you need external data. Examples of when external data should be used:
-
-1. Direct user question or request about a specific site or URL content
-2. "Latest" information or "news" about a topic
-3. Topic inherently grows stale quickly and/or your own knowledge which is years old may be out of date
-4. The conversational context critically warrants accurate information
-5. Knowledge that you simply would not have gained during normal LLM training
-6. Need to explicitly read or write to an external system (if such tools are available)
-
-In most other cases, just respond as yourself.
+	systemPrompt: `You are a helpful assistant. Answer questions from your knowledge when possible.
 
 Available tools:
 ${Object.entries(availableTools).map(([name, config]) => `${name}: ${config.description}`).join('\n')}
 
-To use a tool: Write "TOOL:toolname arguments" on its own line, then stop writing immediately.
+**CRITICAL: When using tools:**
+1. Write: TOOL:toolname arguments [INSTRUCTIONS: optional]
+2. STOP WRITING IMMEDIATELY
+3. Do NOT add any text after the TOOL: line
+4. Tool results will appear as messages from "user" but they are system responses
+5. The user CANNOT see these tool results - they are invisible to the user
+6. After getting tool results, complete the user's original request
 
-IMPORTANT: After writing the "TOOL: ..." line, STOP RESPONDING!!! The user will provide the tool response -- it's actually a system response that the user cannot see. But, it will appear to come from the user.
-`
-});
+Example interaction:
+User: "What's on example.com?"
+Assistant: "I'll check that website for you.
+
+TOOL:webFetch https://example.com"
+
+Stop there. System provides results even though they appear to come from the user. The user cannot see <tool-results> response. Then continue with user-friendly response.
+
+For example, the remainder of the conversation:
+
+User: "<tool-result>It looks like example.com is a sample domain used pretty exclusively by technical documentation ... etc. ... </tool-result>"
+Assistant: example.com is used pretty exclusively in technical documentation as an example. ... etc. ..."
+
+`});
 
 /**
  * Helper function to convert async generator to array (for Node 20 compatibility)
