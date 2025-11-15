@@ -12,6 +12,11 @@ import {
 } from "wirejs-resources";
 import { randomUUID } from 'crypto';
 import * as cheerio from 'cheerio';
+import { writeFileSync, appendFileSync } from 'fs';
+import { join } from 'path';
+
+// Debug logging flag
+const DEBUG_AGENT_INTERACTIONS = true;
 
 export type Chunk = {
 	mid: number;
@@ -120,15 +125,30 @@ const messages = new DistributedTable('app', 'llm-messages', {
 
 const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
+// Debug logging helper
+const debugLog = (category: string, data: any) => {
+	if (DEBUG_AGENT_INTERACTIONS) {
+		const timestamp = new Date().toISOString();
+		const logEntry = `[${timestamp}] [${category}] ${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}\n\n`;
+		console.log(`[DEBUG-${category}]`, data);
+		try {
+			const logPath = join(process.cwd(), 'temp', 'agent-debug.log');
+			appendFileSync(logPath, logEntry);
+		} catch (error) {
+			console.warn('Failed to write debug log:', error);
+		}
+	}
+};
+
 const callTools = async (message: string): Promise<string | undefined> => {
 	try {
 		const toolCalls: { tool: string; args: any[]; instruction?: string }[] = [];
 
-		console.log(`[callTools] Processing message: "${message}"`);
+		debugLog('TOOL-CALL-INPUT', `Processing message: "${message}"`);
 
 		// Skip processing if message contains tool results (already processed or hallucinated)
 		if (message.includes('<tool-result>')) {
-			console.log(`[callTools] Skipping message with existing tool results - this may be LLM hallucination`);
+			debugLog('TOOL-CALL-SKIP', 'Skipping message with existing tool results - this may be LLM hallucination');
 			return undefined;
 		}
 
@@ -151,8 +171,7 @@ const callTools = async (message: string): Promise<string | undefined> => {
 			const toolArgs = match[2].trim();
 			const instruction = match[3] ? match[3].trim() : undefined;
 
-			console.log(`[callTools] Full regex match:`, match);
-			console.log(`[callTools] Parsed: toolName="${toolName}", toolArgs="${toolArgs}", instruction="${instruction}"`);
+			debugLog('TOOL-CALL-MATCH', { match, toolName, toolArgs, instruction });
 
 			if (availableTools.hasOwnProperty(toolName)) {
 				toolCalls.push({
@@ -160,9 +179,9 @@ const callTools = async (message: string): Promise<string | undefined> => {
 					args: [toolArgs],
 					instruction
 				});
-				console.log(`[callTools] Added tool call:`, { tool: toolName, args: [toolArgs], instruction });
+				debugLog('TOOL-CALL-ADDED', { tool: toolName, args: [toolArgs], instruction });
 			} else {
-				console.log(`[callTools] Tool not found: ${toolName}`);
+				debugLog('TOOL-CALL-NOT-FOUND', `Tool not found: ${toolName}. Available: ${Object.keys(availableTools).join(', ')}`);
 			}
 		}
 
@@ -290,6 +309,8 @@ const chunkTextWithOverlap = (text: string, chunkSize: number = 20000, overlapSi
 // Chunked processing with map-reduce pattern
 const executeChunkedProcessing = async (content: string, instruction: string): Promise<string> => {
 	try {
+		debugLog('CHUNK-PROCESSING-START', { contentLength: content.length, instruction });
+		
 		// Extract text if it looks like HTML
 		let processedContent = content;
 		if (content.includes('<html') || content.includes('<!DOCTYPE')) {
@@ -340,11 +361,14 @@ ${chunk}
 
 Please process this chunk according to the instruction above. Focus on extracting key information and insights.`;
 
+			debugLog('CHUNK-PROMPT', { index: index + 1, chunkLength: chunk.length, prompt: chunkPrompt });
+
 			const result = await toolResultProcessor.continueConversation({
 				history: [{ role: 'user', content: chunkPrompt }],
 				timeoutSeconds: 30 // Reduced timeout for smaller chunks
 			});
 
+			debugLog('CHUNK-RESULT', { index: index + 1, result: result.content });
 			chunkSummaries.push(result.content);
 			
 			// Clear chunk after processing to free memory immediately
@@ -369,10 +393,14 @@ ${chunkSummaries.map((summary, i) => `=== Chunk ${i + 1} Summary ===\n${summary}
 
 Please create a final, comprehensive response that synthesizes all the information from the chunks above.`;
 
+		debugLog('FINAL-SYNTHESIS-PROMPT', reducePrompt);
+
 		const finalResult = await toolResultProcessor.continueConversation({
 			history: [{ role: 'user', content: reducePrompt }],
 			timeoutSeconds: 45 // Reduced timeout 
 		});
+
+		debugLog('FINAL-SYNTHESIS-RESULT', finalResult.content);
 
 		// Clear chunk summaries to free memory
 		chunkSummaries.length = 0;
@@ -393,7 +421,7 @@ const executeToolWithSubAgent = async (toolName: string, userRequest: string, in
 	}
 
 	try {
-		console.log(`executeToolWithSubAgent - toolName: ${toolName}, userRequest: "${userRequest}"`);
+		debugLog('TOOL-EXECUTE-START', { toolName, userRequest, instruction });
 
 		// Step 1: Format tool arguments using dedicated sub-agent
 		const argsPrompt = `Tool: ${toolName}
@@ -402,14 +430,14 @@ User Request: ${userRequest}
 
 Extract the arguments needed for this tool and return as a JSON array.`;
 
-		console.log('Sending to argument formatter:', argsPrompt);
+		debugLog('ARG-FORMATTER-PROMPT', argsPrompt);
 
 		const argsResult = await toolArgumentFormatter.continueConversation({
 			history: [{ role: 'user', content: argsPrompt }],
 			timeoutSeconds: 30
 		});
 
-		console.log('Argument formatter response:', argsResult.content);
+		debugLog('ARG-FORMATTER-RESPONSE', argsResult.content);
 
 		// Clean the response - remove markdown code blocks if present
 		let cleanedContent = argsResult.content.trim();
@@ -468,7 +496,7 @@ const availableTools = {
 		description: [
 			'Fetches web pages and processes information according to instructions.',
 			"Use this tool when it is NECESSARY to fulfill the user's request with information from the web.",
-			'Example:\nTOOL:webFetch https://example.com/some-page [INSTRUCTIONS: summarize and extract the most important quotes]\n'
+			'Example:\nTOOL:webFetch https://example.com/some-page [INSTRUCTIONS: summarize and extract the most important quotes in 200 to 2k words depending on original size]\n'
 		].join(' '),
 		supportsChunking: true,
 		async execute(url: string) {
@@ -520,16 +548,16 @@ llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
 	systemPrompt: `You are a helpful assistant. Answer questions directly from your knowledge whenever possible.
 
-Use tools when you need external data. Examples of when external data is required:
+Use tools when you need external data. Examples of when external data should be used:
 
-1. Direct user request about a specific site or URL
+1. Direct user question or request about a specific site or URL content
 2. "Latest" information or "news" about a topic
 3. Topic inherently grows stale quickly and/or your own knowledge which is years old may be out of date
 4. The conversational context critically warrants accurate information
 5. Knowledge that you simply would not have gained during normal LLM training
 6. Need to explicitly read or write to an external system (if such tools are available)
 
-In almost all other cases, just respond as yourself.
+In most other cases, just respond as yourself.
 
 Available tools:
 ${Object.entries(availableTools).map(([name, config]) => `${name}: ${config.description}`).join('\n')}
@@ -652,11 +680,22 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			}]);
 
 			let assistantMessageContent = '';
+			let hadPreviousToolResults = false;
 
 			do {
 				console.log('=== LLM Iteration Start ===');
 				console.log('History length:', history.length);
 				console.log('Last 3 history items:', history.slice(-3));
+
+				// Send newline separator when continuing after tool processing
+				if (hadPreviousToolResults) {
+					await llmRealtimeService.publish(room, [{
+						mid: assistantMid,
+						seq: seq++,
+						pad: pad(),
+						data: { text: '\n\n' }
+					}]);
+				}
 
 				try {
 					const result = await llm.continueConversation({
@@ -681,7 +720,11 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 					console.log('LLM result:', result.content);
 					console.log('=== LLM Iteration End ===');
 
-					// Build up the complete assistant message content
+					// Build up the complete assistant message content  
+					// Add newline if this is a continuation after tool processing
+					if (hadPreviousToolResults && assistantMessageContent.length > 0) {
+						assistantMessageContent += '\n\n';
+					}
 					assistantMessageContent += result.content;
 
 					// Add assistant response to working history
@@ -737,6 +780,9 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 					// Don't continue the loop on LLM errors
 					break;
 				}
+				
+				// Update flag for next iteration
+				hadPreviousToolResults = !!toolResults;
 			} while (toolResults);
 
 			// Store the assistant message (tool results are stored separately as user messages)
