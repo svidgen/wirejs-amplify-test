@@ -53,10 +53,8 @@ const modelsOverride = new Setting('app', 'models', {
 	init: () => 'llama3.2, llama3:8b, llama2'
 });
 
-const llm = new LLMService('app', 'llm', {
-	models: ['llama3.2', 'llama3:8b', 'llama2'],
-	systemPrompt: 'You are a helpful (but generally concise) assistant. CRITICAL: When you make a tool call using TOOL:toolName format, you MUST stop your response immediately. Do NOT provide fake results or continue writing. The system will provide real tool results automatically.'
-});
+// Will be initialized after availableTools is defined
+let llm: LLMService;
 
 // Sub-agent for formatting tool arguments from user requests
 const toolArgumentFormatter = new LLMService('app', 'tool-argument-formatter', {
@@ -135,7 +133,8 @@ const callTools = async (message: string): Promise<string | undefined> => {
 		}
 
 		// Look for tool calls that have content after them (potential hallucination)
-		const toolCallWithHallucinationPattern = /TOOL:\w+[^\n]*\n[\s\S]*<tool-result>/;
+		// Only detect tool calls at start of line (with optional leading whitespace)
+		const toolCallWithHallucinationPattern = /(?:^|\n)\s*TOOL:\w+[^\n]*\n[\s\S]*<tool-result>/;
 		if (toolCallWithHallucinationPattern.test(message)) {
 			console.log(`[callTools] Detected potential LLM hallucination - tool call with fake results`);
 			return undefined;
@@ -143,8 +142,8 @@ const callTools = async (message: string): Promise<string | undefined> => {
 
 		// Enhanced pattern to find tool usage requests with optional instructions
 		// Format: TOOL:toolName url_or_args [INSTRUCTION: special instructions]
-		// Match everything after toolName until newline or INSTRUCTION bracket
-		const toolCallPattern = /TOOL:(\w+)\s+([^\r\n]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?(?=\s*(?:\r?\n|$))/g;
+		// IMPORTANT: TOOL: must appear at start of line (with optional leading whitespace)
+		const toolCallPattern = /(?:^|\n)\s*TOOL:(\w+)\s+([^\r\n]+?)(?:\s*\[INSTRUCTION:\s*([^\]]+)\])?(?=\s*(?:\r?\n|$))/g;
 		let match;
 
 		while ((match = toolCallPattern.exec(message)) !== null) {
@@ -288,48 +287,28 @@ const chunkTextWithOverlap = (text: string, chunkSize: number = 20000, overlapSi
 	return chunks;
 };
 
-// Memory profiling helper
-const logMemoryUsage = (label: string) => {
-	if (global.gc) {
-		global.gc();
-	}
-	const usage = process.memoryUsage();
-	console.log(`[MEMORY] ${label}:`, {
-		rss: Math.round(usage.rss / 1024 / 1024) + 'MB',
-		heapTotal: Math.round(usage.heapTotal / 1024 / 1024) + 'MB', 
-		heapUsed: Math.round(usage.heapUsed / 1024 / 1024) + 'MB',
-		external: Math.round(usage.external / 1024 / 1024) + 'MB'
-	});
-};
-
 // Chunked processing with map-reduce pattern
 const executeChunkedProcessing = async (content: string, instruction: string): Promise<string> => {
 	try {
-		logMemoryUsage('Start chunked processing');
-		
 		// Extract text if it looks like HTML
 		let processedContent = content;
 		if (content.includes('<html') || content.includes('<!DOCTYPE')) {
-			logMemoryUsage('Before HTML extraction');
 			processedContent = extractTextFromHtml(content);
 			console.log(`Extracted ${processedContent.length} characters of text from HTML`);
 			// Clear original content to free memory
 			content = '';
-			logMemoryUsage('After HTML extraction');
 		}
 
 		// More aggressive size limit to prevent OOM
-		if (processedContent.length > 1500000) { // 1.5MB limit  
+		if (processedContent.length > 3000000) { // 3MB limit  
 			console.log(`Content too large (${processedContent.length} chars), truncating to 1.5MB`);
 			processedContent = processedContent.substring(0, 1500000) + "\n\n[Content truncated due to size...]";
 		}
 
 		// More conservative chunk sizing to prevent OOM
 		// Reduce chunk size significantly for memory efficiency
-		const maxChunkSize = 8000;  // 8k chars per chunk (reduced from 20k)
+		const maxChunkSize = 16000;  // 16k chars per chunk
 		const overlapSize = 800;    // 800 char overlap (10%)
-		
-		logMemoryUsage('Before chunking');
 		
 		// Chunk the content with overlap
 		let chunks = chunkTextWithOverlap(processedContent, maxChunkSize, overlapSize);
@@ -344,7 +323,6 @@ const executeChunkedProcessing = async (content: string, instruction: string): P
 		
 		// Clear processed content after chunking to free memory
 		processedContent = '';
-		logMemoryUsage('After chunking, cleared original content');
 
 		// Map: Process each chunk sequentially to avoid memory issues
 		const chunkSummaries: string[] = [];
@@ -352,7 +330,6 @@ const executeChunkedProcessing = async (content: string, instruction: string): P
 		for (let index = 0; index < chunks.length; index++) {
 			const chunk = chunks[index];
 			console.log(`Processing chunk ${index + 1} of ${chunks.length} (${chunk.length} chars)`);
-			logMemoryUsage(`Before processing chunk ${index + 1}`);
 			
 			const chunkPrompt = `Processing chunk ${index + 1} of ${chunks.length}.
 
@@ -373,8 +350,6 @@ Please process this chunk according to the instruction above. Focus on extractin
 			// Clear chunk after processing to free memory immediately
 			chunks[index] = '';
 			
-			logMemoryUsage(`After processing chunk ${index + 1}`);
-			
 			// Force garbage collection if available and longer delay
 			if (global.gc) {
 				global.gc();
@@ -383,7 +358,6 @@ Please process this chunk according to the instruction above. Focus on extractin
 		}
 
 		console.log(`Processed ${chunkSummaries.length} chunk summaries`);
-		logMemoryUsage('All chunks processed');
 
 		// Reduce: Combine all chunk summaries into final result
 		const reducePrompt = `You have processed a large document in chunks. Below are the summaries from each chunk. Please combine them into a comprehensive, well-organized final response.
@@ -395,8 +369,6 @@ ${chunkSummaries.map((summary, i) => `=== Chunk ${i + 1} Summary ===\n${summary}
 
 Please create a final, comprehensive response that synthesizes all the information from the chunks above.`;
 
-		logMemoryUsage('Before final synthesis');
-		
 		const finalResult = await toolResultProcessor.continueConversation({
 			history: [{ role: 'user', content: reducePrompt }],
 			timeoutSeconds: 45 // Reduced timeout 
@@ -404,8 +376,6 @@ Please create a final, comprehensive response that synthesizes all the informati
 
 		// Clear chunk summaries to free memory
 		chunkSummaries.length = 0;
-		
-		logMemoryUsage('After final synthesis');
 		
 		return finalResult.content;
 
@@ -453,9 +423,7 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 		console.log('Parsed args:', args);
 
 		// Step 2: Execute the tool with formatted arguments
-		logMemoryUsage('Before tool execution');
 		const rawResult = await tool.execute(...args);
-		logMemoryUsage('After tool execution');
 		console.log(`Tool returned ${typeof rawResult === 'string' ? rawResult.length + ' characters' : typeof rawResult}`);
 
 		// Step 3: Check if chunking is needed based on content size
@@ -465,7 +433,6 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 			console.log('Large content detected, using chunked processing');
 			const chunkInstruction = instruction || 'Summarize and extract key information from this content.';
 			const result = await executeChunkedProcessing(rawResult, chunkInstruction);
-			logMemoryUsage('After chunked processing complete');
 			return result;
 		}
 
@@ -496,65 +463,26 @@ Please process this result according to the instruction above.`;
 };
 
 const availableTools = {
-	httpGet: {
-		description: 'Fetches content from a URL. Format URLs properly and return clean, readable results.',
-		supportsChunking: true, // Enable automatic chunking for large web pages
-		async execute(url: string) {
-			console.log(`[httpGet] Starting fetch for: ${url}`);
 
-			try {
-				// Add timeout to prevent hangs
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => {
-					console.log(`[httpGet] Timeout reached for: ${url}`);
-					controller.abort();
-				}, 15000); // 15 second timeout
-
-				console.log(`[httpGet] Making request to: ${url}`);
-				const request = await fetch(url, {
-					signal: controller.signal,
-					headers: {
-						'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Bot/1.0)'
-					}
-				});
-
-				clearTimeout(timeoutId);
-
-				console.log(`[httpGet] Response status: ${request.status} for: ${url}`);
-
-				if (!request.ok) {
-					throw new Error(`HTTP ${request.status}: ${request.statusText}`);
-				}
-
-				const body = await request.text();
-				console.log(`[httpGet] Successfully fetched ${body.length} characters from: ${url}`);
-				return body;
-
-			} catch (error) {
-				console.error(`[httpGet] Error fetching ${url}:`, error);
-				if (error instanceof Error && error.name === 'AbortError') {
-					throw new Error(`Request timeout after 15 seconds for: ${url}`);
-				}
-				throw error;
-			}
-		}
-	},
-	
-	webAnalyzer: {
-		description: 'Fetches and analyzes web pages (URLs) with automatic chunking for comprehensive insights. Use this for Wikipedia pages, articles, or any URL you want to analyze. Perfect for research and extracting key information from websites.',
+	webFetch: {
+		description: [
+			'Fetches web pages and processes information according to instructions.',
+			"Use this tool when it is NECESSARY to fulfill the user's request with information from the web.",
+			'Example:\nTOOL:webFetch https://example.com/some-page [INSTRUCTIONS: summarize and extract the most important quotes]\n'
+		].join(' '),
 		supportsChunking: true,
 		async execute(url: string) {
-			console.log(`[webAnalyzer] Starting comprehensive analysis for: ${url}`);
+			console.log(`[webFetch] Starting comprehensive analysis for: ${url}`);
 
 			try {
 				// Use the same fetch logic as httpGet but optimized for analysis
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => {
-					console.log(`[webAnalyzer] Timeout reached for: ${url}`);
+					console.log(`[webFetch] Timeout reached for: ${url}`);
 					controller.abort();
 				}, 20000); // 20 second timeout for analysis
 
-				console.log(`[webAnalyzer] Fetching content from: ${url}`);
+				console.log(`[webFetch] Fetching content from: ${url}`);
 				const request = await fetch(url, {
 					signal: controller.signal,
 					headers: {
@@ -570,13 +498,13 @@ const availableTools = {
 				}
 
 				const body = await request.text();
-				console.log(`[webAnalyzer] Fetched ${body.length} characters for comprehensive analysis from: ${url}`);
+				console.log(`[webFetch] Fetched ${body.length} characters for comprehensive analysis from: ${url}`);
 				
 				// Return raw content - chunking will be handled automatically by executeToolWithSubAgent
 				return body;
 
 			} catch (error) {
-				console.error(`[webAnalyzer] Error analyzing ${url}:`, error);
+				console.error(`[webFetch] Error analyzing ${url}:`, error);
 				if (error instanceof Error && error.name === 'AbortError') {
 					throw new Error(`Analysis timeout after 20 seconds for: ${url}`);
 				}
@@ -584,65 +512,33 @@ const availableTools = {
 			}
 		}
 	},
-	
-	textAnalyzer: {
-		description: 'Analyzes TEXT CONTENT ONLY (not URLs). Pass the actual text content to be analyzed with automatic chunking. Do NOT use for URLs - use webAnalyzer or httpGet instead.',
-		supportsChunking: true,
-		async execute(text: string) {
-			console.log(`[textAnalyzer] Starting text analysis for ${text.length} characters`);
-			
-			// Validate that this isn't a URL
-			if (text.startsWith('http://') || text.startsWith('https://')) {
-				throw new Error('textAnalyzer is for text content only. Use webAnalyzer or httpGet for URLs.');
-			}
-			
-			// Simply return the text - chunking will be handled automatically
-			return text;
-		}
-	}
+
 };
 
-const availableToolsPrompt = `
-# Tool Usage
+// Initialize LLM service with tool descriptions in system prompt
+llm = new LLMService('app', 'llm', {
+	models: ['llama3.2', 'llama3:8b', 'llama2'],
+	systemPrompt: `You are a helpful assistant. Answer questions directly from your knowledge whenever possible.
 
-When you need to use external tools for research or data gathering, you can send requests to a specialized assistant.
+Use tools when you need external data. Examples of when external data is required:
+
+1. Direct user request about a specific site or URL
+2. "Latest" information or "news" about a topic
+3. Topic inherently grows stale quickly and/or your own knowledge which is years old may be out of date
+4. The conversational context critically warrants accurate information
+5. Knowledge that you simply would not have gained during normal LLM training
+6. Need to explicitly read or write to an external system (if such tools are available)
+
+In almost all other cases, just respond as yourself.
 
 Available tools:
-${Object.entries(availableTools).map(([name, config]) => `- ${name}: ${config.description}`).join('\n')}
+${Object.entries(availableTools).map(([name, config]) => `${name}: ${config.description}`).join('\n')}
 
-## Tool Selection Guide:
-- For URLs/websites (including Wikipedia): Use **webAnalyzer** or **httpGet**
-- For text content analysis: Use **textAnalyzer** (NOT for URLs)
+To use a tool: Write "TOOL:toolname arguments" on its own line, then stop writing immediately.
 
-To use a tool, include this format in your response:
-
-TOOL:webAnalyzer https://en.wikipedia.org/wiki/Dinosaur
-
-For special processing instructions, use the optional INSTRUCTION parameter. Examples:
-
-TOOL:webAnalyzer https://example.com/article [INSTRUCTION: focus on statistics and key findings]
-
-TOOL:webAnalyzer https://example.com/article [INSTRUCTION: extract important quotes from the page]
-
-CRITICAL WORKFLOW RULES when you need to use a tool. Do these steps EXACTLY:
-1. Tell the user BRIEFLY what you're doing (1 sentence)
-2. Write your tool request using the TOOL: format
-3. IMMEDIATELY STOP responding. (Do NOT write anything else!!!)
-
-IMPORTANT:
-- After you finish responding, the system will process your tool request.
-- The system will provide a <tool-result> response that only LOOKS like it comes from the user.
-- The <tool-result> content is NOT visible to the user!
-
-VERY IMPORTANT: ALL raw <tool-result> responses are invisible to the user. They are not actually from the user!
-
-Here is a CORRECT example of how to respond when the user asks for information about {TOPIC}:
-"I'll analyze the Wikipedia article about {TOPIC} for you.
-
-TOOL:webAnalyzer https://en.wikipedia.org/wiki/{TOPIC} [INSTRUCTION: summarize the article in an LLM friendly format]"
-
-That's it. Stop there and wait for tool results before giving the user a human friendly response.
-`;
+IMPORTANT: After writing the "TOOL: ..." line, STOP RESPONDING!!! The user will provide the tool response -- it's actually a system response that the user cannot see. But, it will appear to come from the user.
+`
+});
 
 /**
  * Helper function to convert async generator to array (for Node 20 compatibility)
@@ -674,8 +570,8 @@ const getConversationHistory = async (userIdRoomId: string): Promise<LLMMessage[
 				content: msg.content
 			});
 		}
-		// Note: tool-result messages are no longer stored separately
-		// Tool results are now included in assistant messages
+		// Note: tool-result messages are not stored as persistent conversation records
+		// They exist only transiently in the conversation history during tool processing
 	}
 
 	return llmHistory;
@@ -764,13 +660,7 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 
 				try {
 					const result = await llm.continueConversation({
-						history: [
-							{
-								role: 'user',
-								content: availableToolsPrompt
-							},
-							...history
-						],
+						history: history,
 						onChunk: async chunk => {
 							batch.push(chunk.message.content);
 							if (new Date().getTime() - lastBatch > 150) {
@@ -812,17 +702,6 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 					toolResults = await callTools(result.content);
 
 					if (toolResults) {
-						// Add tool results to the complete assistant message
-						assistantMessageContent += `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n`;
-
-						// Send the tool results as additional content to the current message, wrapped in tags
-						await llmRealtimeService.publish(room, [{
-							mid: assistantMid,
-							seq: seq++,
-							pad: pad(),
-							data: { text: `\n\n<tool-result>\n${toolResults}\n</tool-result>\n\n` }
-						}]);
-
 						// Send tool processing indicator to keep UI in thinking state for continuation
 						await llmRealtimeService.publish(room, [{
 							mid: assistantMid,
@@ -831,8 +710,8 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 							data: `**tool-processing**`
 						}]);
 
-						// Add tool results to conversation history in the same format as stored messages
-						// This ensures consistency between live conversation and retrieved history
+						// Add tool results to conversation history as coming from the user
+						// Tool results are NOT sent to the user directly - they're invisible context for the LLM
 						history.push({
 							role: 'user',
 							content: `<tool-result>\n${toolResults}\n</tool-result>`
@@ -860,7 +739,7 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 				}
 			} while (toolResults);
 
-			// Store the complete assistant message including any tool results
+			// Store the assistant message (tool results are stored separately as user messages)
 			await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
 
 			// Generate conversation title after first exchange (if this is a new conversation)
