@@ -59,7 +59,7 @@ const modelsOverride = new Setting('app', 'models', {
 });
 
 // Will be initialized after availableTools is defined
-let llm: LLMService;
+// let llm: LLMService;
 
 // Sub-agent for formatting tool arguments from user requests
 const toolArgumentFormatter = new LLMService('app', 'tool-argument-formatter', {
@@ -224,33 +224,13 @@ const extractTextFromHtml = (html: string): string => {
 		$('.printfooter, .catlinks').remove(); // Wikipedia footer stuff
 		$('table.ambox, .hatnote').remove(); // Wikipedia message boxes
 		
-		console.log(`[HTML] After removing unwanted elements`);
-		
-		// Extract text from main content areas first (prioritize quality content)
-		let text = '';
-		
-		// Try to get main content first (Wikipedia and other sites)
-		const mainContent = $('#mw-content-text, .mw-parser-output, main, article, .content');
-		if (mainContent.length > 0) {
-			text = mainContent.first().text();
-		} else {
-			// Fallback: get all text from body
-			text = $('body').text();
-		}
-		
-		// Clean up whitespace efficiently
-		text = text
-			.replace(/\s+/g, ' ')                    // Normalize whitespace
-			.replace(/\[\d+\]/g, '')                 // Remove citation numbers [1], [2], etc.
-			.replace(/\s*\n\s*/g, '\n')             // Clean line breaks
-			.replace(/\n{3,}/g, '\n\n')             // Limit consecutive newlines
+		// Extract text with cleaned up whitespace
+		let text = $('body').text()
+			.replace(/\s+/g, ' ')          // Normalize whitespace
+			.replace(/\[\d+\]/g, '')       // Remove citation numbers [1], [2], etc.
+			.replace(/\s*\n\s*/g, '\n')    // Clean line breaks
+			.replace(/\n{3,}/g, '\n\n')    // Limit consecutive newlines
 			.trim();
-		
-		// Remove common Wikipedia noise patterns
-		text = text
-			.replace(/\s*(Coordinates|Categories|References|External links|See also):.*$/gim, '')
-			.replace(/\s*\[(edit|citation needed|clarification needed)\]/gi, '')
-			.replace(/\s*(Cookie|Privacy Policy|Terms of Service|Subscribe|Newsletter|Advertisement)[^\n]*/gi, '');
 		
 		console.log(`[HTML] Final cheerio extracted text: ${text.length} chars`);
 		return text;
@@ -329,14 +309,14 @@ const executeChunkedProcessing = async (content: string, instruction: string): P
 		// More conservative chunk sizing to prevent OOM
 		// Reduce chunk size significantly for memory efficiency
 		const maxChunkSize = 16000;  // 16k chars per chunk
-		const overlapSize = 800;    // 800 char overlap (10%)
+		const overlapSize = 1600;    // 800 char overlap (10%)
 		
 		// Chunk the content with overlap
 		let chunks = chunkTextWithOverlap(processedContent, maxChunkSize, overlapSize);
 		console.log(`Split content into ${chunks.length} overlapping chunks (chunk size: ${maxChunkSize})`);
 		
 		// Limit total chunks to prevent excessive processing and OOM
-		const MAX_CHUNKS = 25; // Reasonable limit for memory and processing time
+		const MAX_CHUNKS = 100;
 		if (chunks.length > MAX_CHUNKS) {
 			console.log(`Too many chunks (${chunks.length}), limiting to ${MAX_CHUNKS} and truncating`);
 			chunks = chunks.slice(0, MAX_CHUNKS);
@@ -352,20 +332,20 @@ const executeChunkedProcessing = async (content: string, instruction: string): P
 			const chunk = chunks[index];
 			console.log(`Processing chunk ${index + 1} of ${chunks.length} (${chunk.length} chars)`);
 			
-			const chunkPrompt = `Processing chunk ${index + 1} of ${chunks.length}.
+			const chunkPrompt = `Please process chunk ${index + 1} of ${chunks.length}.
 
-Instruction: ${instruction}
+Processing Instructions: ${instruction}
 
-Chunk Content:
+Content:
 ${chunk}
 
-Please process this chunk according to the instruction above. Focus on extracting key information and insights.`;
+Please process this chunk according to the instruction above.`;
 
 			debugLog('CHUNK-PROMPT', { index: index + 1, chunkLength: chunk.length, prompt: chunkPrompt });
 
 			const result = await toolResultProcessor.continueConversation({
 				history: [{ role: 'user', content: chunkPrompt }],
-				timeoutSeconds: 30 // Reduced timeout for smaller chunks
+				timeoutSeconds: 10
 			});
 
 			debugLog('CHUNK-RESULT', { index: index + 1, result: result.content });
@@ -373,31 +353,24 @@ Please process this chunk according to the instruction above. Focus on extractin
 			
 			// Clear chunk after processing to free memory immediately
 			chunks[index] = '';
-			
-			// Force garbage collection if available and longer delay
-			if (global.gc) {
-				global.gc();
-			}
-			await new Promise(resolve => setTimeout(resolve, 200));
 		}
 
 		console.log(`Processed ${chunkSummaries.length} chunk summaries`);
 
 		// Reduce: Combine all chunk summaries into final result
-		const reducePrompt = `You have processed a large document in chunks. Below are the summaries from each chunk. Please combine them into a comprehensive, well-organized final response.
+		const reducePrompt = `We have processed a large document in chunks. Below are the summaries from each chunk. Please combine them into a single response per the instructions.
 
-Original Instruction: ${instruction}
+Processing Instructions: ${instruction}
 
 Chunk Summaries:
 ${chunkSummaries.map((summary, i) => `=== Chunk ${i + 1} Summary ===\n${summary}`).join('\n\n')}
-
-Please create a final, comprehensive response that synthesizes all the information from the chunks above.`;
+`;
 
 		debugLog('FINAL-SYNTHESIS-PROMPT', reducePrompt);
 
 		const finalResult = await toolResultProcessor.continueConversation({
 			history: [{ role: 'user', content: reducePrompt }],
-			timeoutSeconds: 45 // Reduced timeout 
+			timeoutSeconds: 30
 		});
 
 		debugLog('FINAL-SYNTHESIS-RESULT', finalResult.content);
@@ -414,7 +387,11 @@ Please create a final, comprehensive response that synthesizes all the informati
 };
 
 // Three-step tool execution with specialized sub-agents
-const executeToolWithSubAgent = async (toolName: string, userRequest: string, instruction?: string): Promise<string> => {
+const executeToolWithSubAgent = async (
+	toolName: string,
+	userRequest: string,
+	instruction?: string
+): Promise<string> => {
 	const tool = (availableTools as any)[toolName];
 	if (!tool) {
 		throw new Error(`Tool ${toolName} not found`);
@@ -434,7 +411,7 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 
 		const argsResult = await toolArgumentFormatter.continueConversation({
 			history: [{ role: 'user', content: argsPrompt }],
-			timeoutSeconds: 30
+			timeoutSeconds: 30,
 		});
 
 		debugLog('ARG-FORMATTER-RESPONSE', argsResult.content);
@@ -452,23 +429,23 @@ Extract the arguments needed for this tool and return as a JSON array.`;
 
 		// Step 2: Execute the tool with formatted arguments
 		const rawResult = await tool.execute(...args);
-		console.log(`Tool returned ${typeof rawResult === 'string' ? rawResult.length + ' characters' : typeof rawResult}`);
+		const stringResult = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2);
+		console.log(`Tool returned ${stringResult.length}`);
 
 		// Step 3: Check if chunking is needed based on content size
-		const shouldChunk = typeof rawResult === 'string' && rawResult.length > 8000;
-		
-		if (shouldChunk && tool.supportsChunking !== false) {
+		const shouldChunk = stringResult.length > 16_000;
+		if (shouldChunk) {
 			console.log('Large content detected, using chunked processing');
 			const chunkInstruction = instruction || 'Summarize and extract key information from this content.';
-			const result = await executeChunkedProcessing(rawResult, chunkInstruction);
+			const result = await executeChunkedProcessing(stringResult, chunkInstruction);
 			return result;
 		}
 
 		// Step 3: Process results using dedicated sub-agent (standard path)
 		// Extract text from HTML if needed (same logic as chunked processing)
-		let cleanedResult = rawResult;
-		if (typeof rawResult === 'string' && (rawResult.includes('<html') || rawResult.includes('<!DOCTYPE'))) {
-			cleanedResult = extractTextFromHtml(rawResult);
+		let cleanedResult = stringResult;
+		if (stringResult.includes('<html') || stringResult.includes('<!DOCTYPE')) {
+			cleanedResult = extractTextFromHtml(stringResult);
 			console.log(`[Non-chunked] Extracted ${cleanedResult.length} characters of text from HTML`);
 		}
 
@@ -547,7 +524,7 @@ const availableTools = {
 };
 
 // Initialize LLM service with tool descriptions in system prompt
-llm = new LLMService('app', 'llm', {
+const llm = new LLMService('app', 'llm', {
 	models: ['llama3.2', 'llama3:8b', 'llama2'],
 	systemPrompt: `You are a helpful assistant. Answer questions from your knowledge when possible.
 
@@ -588,31 +565,30 @@ async function fromAsync<T>(gen: AsyncGenerator<T>): Promise<T[]> {
 	return items;
 }
 
-const getConversationHistory = async (userIdRoomId: string): Promise<LLMMessage[]> => {
+const getRawConversationHistory = async (userIdRoomId: string): Promise<ConversationMessage[]> => {
 	const storedMessages = messages.query({
 		by: 'userIdRoomId-mid',
 		where: { userIdRoomId: { eq: userIdRoomId } }
 	});
 
-	const llmHistory: LLMMessage[] = [];
-
 	// Convert async generator to array and sort by mid
 	const messagesArray = await fromAsync(storedMessages);
 	messagesArray.sort((a, b) => a.mid - b.mid);
+	return messagesArray;
+};
 
-	for (const msg of messagesArray) {
-		if (msg.role === 'user' || msg.role === 'assistant') {
-			llmHistory.push({
-				role: msg.role,
-				content: msg.content
+const mapRawHistoryToMessages = (messages: ConversationMessage[]) => {
+	const history: LLMMessage[] = [];
+	for (const m of messages) {
+		if (m.role === 'user' || m.role === 'assistant') {
+			history.push({
+				role: m.role,
+				content: m.content
 			});
 		}
-		// Note: tool-result messages are not stored as persistent conversation records
-		// They exist only transiently in the conversation history during tool processing
 	}
-
-	return llmHistory;
-};
+	return history;
+}
 
 const storeMessage = async (userIdRoomId: string, mid: number, role: ConversationMessage['role'], content: string, toolCall?: any, toolResult?: string) => {
 	const message: ConversationMessage = {
@@ -629,6 +605,65 @@ const storeMessage = async (userIdRoomId: string, mid: number, role: Conversatio
 	return message;
 };
 
+const assignConversationName = async (room: string, message: string) => {
+	const [userId, roomId] = room.split('/');
+
+	// temporary name first
+	const timestamp = new Date().toLocaleString();
+	const timestampedTitle = `Conversation ${timestamp}`;
+	
+	await conversations.save({
+		userId,
+		roomId,
+		name: timestampedTitle,
+		createdAt: Date.now()
+	});
+	
+	// Send initial title to client so it appears in dropdown immediately
+	await llmRealtimeService.publish(room, [{
+		mid: -1, // Special mid for metadata updates
+		seq: 0,
+		pad: pad(),
+		data: `**title-update**:${timestampedTitle}`
+	}]);
+
+	// now, try to create a more relevant title
+	try {
+		const titlePrompt = `Generate a short title for this conversation for this message: ${message}\n\n`;
+		const titleResult = await conversationTitleGenerator.continueConversation({
+			history: [{ role: 'user', content: titlePrompt }],
+			timeoutSeconds: 10
+		});
+		
+		// Clean the title - remove quotes if they wrap the entire title
+		let cleanTitle = titleResult.content.trim();
+		if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) || 
+			(cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
+			cleanTitle = cleanTitle.slice(1, -1).trim();
+		}
+		
+		// Store/update conversation record with title
+		await conversations.save({
+			userId,
+			roomId,
+			name: cleanTitle,
+			createdAt: Date.now()
+		});
+		
+		// Send title update to client via realtime
+		await llmRealtimeService.publish(room, [{
+			mid: -1, // Special mid for metadata updates
+			seq: 0,
+			pad: pad(),
+			data: `**title-update**:${cleanTitle}`
+		}]);
+		
+		console.log(`Generated conversation title: "${cleanTitle}"`);
+	} catch (error) {
+		console.error('Failed to generate conversation title:', error);
+	}
+}
+
 const chatRunner = new BackgroundJob('app', 'chatRunner', {
 	handler: async (room: string, newUserMessage: string) => {
 		try {
@@ -636,16 +671,11 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 			if (overrides.length > 0) llm.models = overrides;
 
 			// Load conversation history from database
-			const history = await getConversationHistory(room);
+			const rawHistory = await getRawConversationHistory(room);
+			const history = mapRawHistoryToMessages(rawHistory);
 
-			// Get the next message ID by finding the highest existing mid
-			const existingMessagesGen = messages.query({
-				by: 'userIdRoomId-mid',
-				where: { userIdRoomId: { eq: room } }
-			});
-			const existingMessages = await fromAsync(existingMessagesGen);
-			const nextMid = existingMessages.length > 0 ?
-				Math.max(...existingMessages.map(m => m.mid)) + 1 : 0;
+			const nextMid = rawHistory.length > 0 ?
+				Math.max(...rawHistory.map(m => m.mid)) + 1 : 0;
 
 			// Store the new user message
 			await storeMessage(room, nextMid, 'user', newUserMessage);
@@ -653,25 +683,7 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 
 			// If this is the first message (new conversation), save it with timestamped title
 			if (history.length === 1) {
-				const [userId] = room.split('/');
-				const [, roomId] = room.split('/');
-				const timestamp = new Date().toLocaleString();
-				const timestampedTitle = `Conversation ${timestamp}`;
-				
-				await conversations.save({
-					userId,
-					roomId,
-					name: timestampedTitle,
-					createdAt: Date.now()
-				});
-				
-				// Send initial title to client so it appears in dropdown immediately
-				await llmRealtimeService.publish(room, [{
-					mid: -1, // Special mid for metadata updates
-					seq: 0,
-					pad: pad(),
-					data: `**title-update**:${timestampedTitle}`
-				}]);
+				assignConversationName(room, newUserMessage);
 			}
 
 			let currentMid = nextMid + 1;
@@ -796,47 +808,6 @@ const chatRunner = new BackgroundJob('app', 'chatRunner', {
 
 			// Store the assistant message (tool results are stored separately as user messages)
 			await storeMessage(room, assistantMid, 'assistant', assistantMessageContent);
-
-			// Generate conversation title after first exchange (if this is a new conversation)
-			// Check original message count before any messages were stored in this session
-			if (existingMessages.length === 0) { // This was a brand new conversation
-				try {
-					const titlePrompt = `User: ${newUserMessage}\n\nAssistant: ${assistantMessageContent}\n\nGenerate a short title for this conversation:`;
-					const titleResult = await conversationTitleGenerator.continueConversation({
-						history: [{ role: 'user', content: titlePrompt }],
-						timeoutSeconds: 10
-					});
-					
-					// Clean the title - remove quotes if they wrap the entire title
-					let cleanTitle = titleResult.content.trim();
-					if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) || 
-					    (cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
-						cleanTitle = cleanTitle.slice(1, -1).trim();
-					}
-					
-					// Store/update conversation record with title
-					const [userId] = room.split('/');
-					const [, roomId] = room.split('/');
-					await conversations.save({
-						userId,
-						roomId,
-						name: cleanTitle,
-						createdAt: Date.now()
-					});
-					
-					// Send title update to client via realtime
-					await llmRealtimeService.publish(room, [{
-						mid: -1, // Special mid for metadata updates
-						seq: 0,
-						pad: pad(),
-						data: `**title-update**:${cleanTitle}`
-					}]);
-					
-					console.log(`Generated conversation title: "${cleanTitle}"`);
-				} catch (error) {
-					console.error('Failed to generate conversation title:', error);
-				}
-			}
 
 			await llmRealtimeService.publish(room, [{
 				mid: assistantMid,
