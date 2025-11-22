@@ -12,15 +12,15 @@
 		"cheerio": "^1.1.2",
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6",
-		"wirejs-components": "^0.1.90-llm",
+		"wirejs-components": "^0.1.91-llm",
 		"wirejs-dom": "^1.0.44",
-		"wirejs-module-payments-stripe": "^0.1.41-llm",
-		"wirejs-resources": "^0.1.147-llm",
-		"wirejs-web-worker": "^1.0.44-llm"
+		"wirejs-module-payments-stripe": "^0.1.42-llm",
+		"wirejs-resources": "^0.1.148-llm",
+		"wirejs-web-worker": "^1.0.45-llm"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.3",
-		"wirejs-scripts": "^3.0.145-llm"
+		"wirejs-scripts": "^3.0.146-llm"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",
