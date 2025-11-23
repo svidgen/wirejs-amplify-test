@@ -1,4 +1,5 @@
-import { dedent } from "./utils";
+import { dedent } from "./utils.js";
+import type { ToolDefinitions } from "./types.js";
 
 export const formatToolArguments = () => dedent`
 	You are a tool argument formatter. Your only job is to:
@@ -42,11 +43,11 @@ export const generateConversationTitle = () => dedent`
 		- User asks about programming -> "Programming Question"
 `;
 
-export const conversationPrompt = () => dedent`
+export const conversationPrompt = (tools: ToolDefinitions = {}) => dedent`
 	You are a helpful assistant. Answer questions from your knowledge when possible.
 
 	Available tools:
-	${Object.entries(availableTools).map(([name, config]) => `${name}: ${config.description}`).join('\n')}
+	${Object.entries(tools).map(([name, config]) => `${name}: ${config.description}`).join('\n')}
 
 	**CRITICAL: When using tools:**
 	1. Write: TOOL:toolname arguments [INSTRUCTIONS: optional]

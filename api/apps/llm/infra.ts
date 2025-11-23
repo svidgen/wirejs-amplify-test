@@ -7,8 +7,8 @@ import {
 	Setting,
 	Resource
 } from "wirejs-resources";
-import { fromAsync } from "./utils";
-import { Chunk, Conversation, ConversationMessage } from "./types";
+import { fromAsync } from "./utils.js";
+import { Chunk, Conversation, ConversationMessage } from "./types.js";
 
 
 export class Infra extends Resource {
@@ -18,7 +18,7 @@ export class Infra extends Resource {
 	llm: ReturnType<typeof makeLLMService>;
 	modelSetting: ReturnType<typeof makeModelsOverrideSetting>;
 
-	constructor(scope: Resource, id: string) {
+	constructor(scope: string | Resource, id: string) {
 		super(scope, id);
 		this.conversations = makeConversationsTable(this);
 		this.messages = makeMessagesTable(this);

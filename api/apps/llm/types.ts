@@ -29,6 +29,13 @@ export type ConversationMessage = {
 	chunks?: Chunk[]; // for streaming assistant messages
 };
 
+export type ToolDefinition = {
+	description: string;
+	execute: (...args: any) => Promise<any>
+};
+
+export type ToolDefinitions = Record<string, ToolDefinition>;
+
 export type Message = LLMMessage;
 
 export type MinimalChunk = {

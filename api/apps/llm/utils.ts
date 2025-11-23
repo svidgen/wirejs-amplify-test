@@ -6,6 +6,10 @@ import * as cheerio from 'cheerio';
  * navigation, extra whitespace, etc.
  */
 export const extractContentFromHtml = (html: string): string => {
+	if (!html.includes('<html') && !html.includes('<!DOCTYPE')) {
+		return html;
+	}
+	
 	try {
 		console.log(`[HTML] Starting cheerio extraction from ${html.length} chars`);
 		
@@ -175,6 +179,8 @@ export const chunkMap = async (
 
 /**
  * Takes a array of text chunks and reduces them with a text chunks processor.
+ * 
+ * Recurses if the chunk size is too large to reduce in a single pass.
  * 
  * @param chunks 
  * @param process 
