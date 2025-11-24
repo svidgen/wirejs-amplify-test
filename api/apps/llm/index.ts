@@ -221,11 +221,7 @@ const assignConversationName = async (room: string, message: string) => {
 		});
 		
 		// Clean the title - remove quotes if they wrap the entire title
-		let cleanTitle = titleResult.content.trim();
-		if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) || 
-			(cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
-			cleanTitle = cleanTitle.slice(1, -1).trim();
-		}
+		
 		
 		// Store/update conversation record with title
 		await conversations.save({

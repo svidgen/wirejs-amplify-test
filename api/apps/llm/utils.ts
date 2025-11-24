@@ -13,6 +13,21 @@ import * as cheerio from 'cheerio';
 export const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
 /**
+ * Cleans up quotes from a title that may have been provided by an LLM.
+ * 
+ * @param title 
+ * @returns 
+ */
+export const cleanTitle = (title: string) => {
+	let cleanTitle = title.trim();
+	if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) || 
+		(cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
+		cleanTitle = cleanTitle.slice(1, -1).trim();
+	}
+	return cleanTitle;
+}
+
+/**
  * Extract "content"-like text from HTML using common patterns to ignore headers, footers,
  * navigation, extra whitespace, etc.
  */

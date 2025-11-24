@@ -10,8 +10,8 @@ import {
 	Setting,
 	User,
 } from "wirejs-resources";
-import { fromAsync } from "./utils.js";
-import { Chunk, Conversation, ConversationMessage } from "./types.js";
+import { fromAsync, pad } from "./utils.js";
+import { Chunk, ControlMessage, Conversation, ConversationMessage } from "./types.js";
 
 export type InvokeLLMOptions = {
 	systemPrompt: string;
@@ -134,7 +134,7 @@ export class Infra extends Resource {
 		content: string,
 		toolCall?: any,
 		toolResult?: string
-	) {
+	): Promise<ConversationMessage> {
 		const message: ConversationMessage = {
 			conversationId,
 			mid,
@@ -151,6 +151,15 @@ export class Infra extends Resource {
 
 	getStream(context: Context, conversationId: string) {
 		return this.realtime.getStream(context, conversationId);
+	}
+
+	async sendControlMessage(conversationId: string, data: ControlMessage): Promise<void> {
+		await this.realtime.publish(conversationId, [{
+			mid: -1,
+			seq: 0,
+			pad: pad(),
+			data
+		}]);
 	}
 }
 

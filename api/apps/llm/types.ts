@@ -4,8 +4,15 @@ export type Chunk = {
 	mid: number;
 	seq: number;
 	pad: string; // security padding
-	data: '**start**' | '**end**' | '**tool-processing**' | string | MinimalChunk;
+	data: MinimalChunk | ControlMessage;
 }
+
+export type ControlMessage =
+	| { instruction: 'start' }
+	| { instruction: 'end' }
+	| { instruction: 'setConversationField', field: 'title', value: string }
+	| { instruction: 'setStatus', status: string }
+;
 
 export type Conversation = {
 	userId: string;
