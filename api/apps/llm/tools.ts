@@ -1,7 +1,7 @@
 import { dedent } from "./utils.js";
 import type { ToolDefinitions } from "./types.js";
 
-export const standard = {
+export const standard: ToolDefinitions = {
 	webFetch: {
 		description: dedent`
 			Fetches and analyzes web content. Use when:
@@ -56,4 +56,4 @@ export const standard = {
 			}
 		}
 	},
-} satisfies ToolDefinitions;
+};

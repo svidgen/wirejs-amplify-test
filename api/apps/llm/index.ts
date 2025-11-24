@@ -249,13 +249,6 @@ const assignConversationName = async (room: string, message: string) => {
 	}
 }
 
-
-const assertIsAuthorized = (user: User, room: string) => {
-	if (!room.startsWith(`${user.id}/`)) {
-		throw new Error("Not authorized");
-	}
-}
-
 export const LLM = (auth: AuthenticationApi) => {
 	const infra = new Infra('app', 'llm');
 	const chatRunner = new BackgroundJob('app', 'chatRunner', {
@@ -265,7 +258,7 @@ export const LLM = (auth: AuthenticationApi) => {
 	return withContext(context => ({
 		async send(room: string, message: string) {
 			const user = await auth.requireCurrentUser(context);
-			assertIsAuthorized(user, room);
+			await infra.assertUserIsAuthorized(user, room);
 			if (!room || !message || !message.trim()) {
 				throw new Error('Room and message are required');
 			}
@@ -273,19 +266,14 @@ export const LLM = (auth: AuthenticationApi) => {
 		},
 		async getRoom(room: string) {
 			const user = await auth.requireCurrentUser(context);
-			assertIsAuthorized(user, room);
-			return infra.realtime.getStream(context, room);
+			await infra.assertUserIsAuthorized(user, room);
+			return infra.getStream(context, room);
 		},
 		async getHistory(room: string) {
 			const user = await auth.requireCurrentUser(context);
-			assertIsAuthorized(user, room);
-			const messagesGen = infra.messages.query({
-				by: 'userIdRoomId-mid',
-				where: { userIdRoomId: { eq: room } }
-			});
-			const messagesArray = await fromAsync(messagesGen);
-			return messagesArray
-				.sort((a, b) => a.mid - b.mid)
+			await infra.assertUserIsAuthorized(user, room);
+			const rawMessages = await infra.getRawConversationHistory(room);
+			return rawMessages
 				.filter(m => m.role === 'user' || m.role === 'assistant')
 				.map(m => ({
 					role: m.role,
@@ -295,45 +283,17 @@ export const LLM = (auth: AuthenticationApi) => {
 		},
 		async createRoom() {
 			const user = await auth.requireCurrentUser(context);
-			const id = crypto.randomUUID();
-			return `${user.id}/${id}`;
+			const conversation = await infra.createConversation(user);
+			return conversation.conversationId;
 		},
 		async getConversations() {
 			const user = await auth.requireCurrentUser(context);
-			const conversationsGen = infra.conversations.query({
-				by: 'userId-roomId',
-				where: { userId: { eq: user.id } }
-			});
-			const conversationsArray = await fromAsync(conversationsGen);
-			return conversationsArray
-				.sort((a, b) => b.createdAt - a.createdAt) // Most recent first
-				.map(c => ({
-					roomId: `${c.userId}/${c.roomId}`,
-					name: c.name || 'Untitled Conversation',
-					createdAt: c.createdAt
-				}));
+			return infra.listUserConversations(user);
 		},
-		async deleteConversation(room: string) {
+		async deleteConversation(conversationId: string) {
 			const user = await auth.requireCurrentUser(context);
-			assertIsAuthorized(user, room);
-			
-			// Delete all messages for this conversation
-			const messagesGen = infra.messages.query({
-				by: 'userIdRoomId-mid',
-				where: { userIdRoomId: { eq: room } }
-			});
-			const messagesToDelete = await fromAsync(messagesGen);
-			await Promise.all(messagesToDelete.map(msg => infra.messages.delete(msg)));
-			
-			// Delete conversation record (may not exist for new conversations)
-			const [userId, roomId] = room.split('/');
-			try {
-				await infra.conversations.delete({ userId, roomId });
-			} catch (error) {
-				// Conversation record may not exist yet for new conversations
-				console.log('Conversation record not found, which is OK for new conversations');
-			}
-			
+			await infra.assertUserIsAuthorized(user, conversationId);
+			await infra.deleteConversation(conversationId)
 			return { success: true };
 		}
 	}))

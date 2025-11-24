@@ -5,8 +5,9 @@ import {
 	LLMMessage,
 	PassThruParser,
 	RealtimeService,
+	Resource,
 	Setting,
-	Resource
+	User,
 } from "wirejs-resources";
 import { fromAsync } from "./utils.js";
 import { Chunk, Conversation, ConversationMessage } from "./types.js";
@@ -40,10 +41,11 @@ export class Infra extends Resource {
 		// TODO ...
 	}
 
-	async createConversation(userId: string): Promise<Conversation> {
+	async createConversation(user: User): Promise<Conversation> {
 		const createdAt = Date.now();
 		const timestamp = new Date().toLocaleString();
-		const name = `Conversation ${timestamp}`
+		const name = `Conversation ${timestamp}`;
+		const userId = user.id;
 
 		for (let i = 0; i < 10; i++) {
 			const conversationId = randomUUID();
@@ -68,6 +70,50 @@ export class Infra extends Resource {
 		return this.conversations.get({ conversationId });
 	}
 
+	async listUserConversations(user: User) {
+		const conversationsGen = this.conversations.query({
+			by: 'userId-createdAt',
+			where: { userId: { eq: user.id } }
+		});
+		const conversationsArray = await fromAsync(conversationsGen);
+		return conversationsArray
+			.sort((a, b) => b.createdAt - a.createdAt) // Most recent first
+			.map(c => ({
+				conversationId: c.conversationId,
+				name: c.name || 'Untitled Conversation',
+				createdAt: c.createdAt
+			}))
+		;
+	}
+
+	async assertUserIsAuthorized(
+		user: User,
+		conversation: string | Conversation | undefined
+	) : Promise<void> {
+		if (typeof conversation === 'string') {
+			const record = await this.getConversation(conversation);
+			return this.assertUserIsAuthorized(user, record);
+		} else {
+			if (conversation?.userId !== user.id) {
+				throw new Error("Not authorized");
+			}
+		}
+	}
+
+	async deleteConversation(conversationId: string): Promise<void> {
+		// start with the header. if needs be, individual messages can be cleaned up
+		// later. whereas if we start with the messages and are interrupted, we'd just
+		// but corrupting a conversation.
+		await this.conversations.delete({ conversationId });
+
+		const messagesGen = this.messages.query({
+			by: 'conversationId-mid',
+			where: { conversationId: { eq: conversationId } }
+		});
+		const messagesToDelete = await fromAsync(messagesGen);
+		await Promise.all(messagesToDelete.map(msg => this.messages.delete(msg)));
+	}
+
 	async getRawConversationHistory(conversationId: string): Promise<ConversationMessage[]> {
 		const storedMessages = this.messages.query({
 			by: 'conversationId-mid',
@@ -80,7 +126,7 @@ export class Infra extends Resource {
 		return messagesArray;
 	};
 
-	async storeMessage(
+	async addMessage(
 		conversationId: string,
 		mid: number,
 		role: ConversationMessage['role'],
@@ -98,7 +144,7 @@ export class Infra extends Resource {
 			createdAt: Date.now()
 		};
 
-		await this.messages.save(message);
+		await this.messages.save(message, { onlyIfNotExists: true });
 		return message;
 	};
 }
@@ -112,7 +158,13 @@ const makeConversationsTable = (scope: Resource) => new DistributedTable(
 		parse: PassThruParser<Conversation>,
 		key: {
 			partition: { field: 'conversationId', type: 'string' },
-		}
+		},
+		indexes: [
+			{
+				partition: { field: 'userId', type: 'string' },
+				sort: { field: 'createdAt', type: 'number' }
+			}
+		],
 	}
 );
 
