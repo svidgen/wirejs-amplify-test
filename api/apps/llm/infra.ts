@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
+	Context,
 	DistributedTable,
 	LLM as LLMService,
 	LLMMessage,
@@ -147,6 +148,10 @@ export class Infra extends Resource {
 		await this.messages.save(message, { onlyIfNotExists: true });
 		return message;
 	};
+
+	getStream(context: Context, conversationId: string) {
+		return this.realtime.getStream(context, conversationId);
+	}
 }
 
 const makeRealtimeService = (scope: Resource) => new RealtimeService<Chunk>(scope, 'realtime');
