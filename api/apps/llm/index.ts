@@ -6,7 +6,6 @@ import {
 	User,
 	withContext
 } from "wirejs-resources";
-import { randomUUID } from 'crypto';
 import { appendFileSync } from 'fs';
 import { join } from 'path';
 import { dedent, extractContentFromHtml, fromAsync } from "./utils.js";
@@ -16,8 +15,6 @@ import { Infra } from "./infra.js";
 // Debug logging flag
 const DEBUG_AGENT_INTERACTIONS = true;
 
-
-const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
 // Debug logging helper
 const debugLog = (category: string, data: any) => {
@@ -115,11 +112,13 @@ const executeToolWithSubAgent = async (
 		debugLog('TOOL-EXECUTE-START', { toolName, userRequest, instruction });
 
 		// Step 1: Format tool arguments using dedicated sub-agent
-		const argsPrompt = `Tool: ${toolName}
-Tool Description: ${tool.description}
-User Request: ${userRequest}
+		const argsPrompt = dedent`
+			Tool: ${toolName}
+			Tool Description: ${tool.description}
+			User Request: ${userRequest}
 
-Extract the arguments needed for this tool and return as a JSON array.`;
+			Extract the arguments needed for this tool and return as a JSON array.
+		`;
 
 		debugLog('ARG-FORMATTER-PROMPT', argsPrompt);
 

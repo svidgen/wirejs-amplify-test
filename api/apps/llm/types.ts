@@ -9,13 +9,13 @@ export type Chunk = {
 
 export type Conversation = {
 	userId: string;
-	roomId: string;
+	conversationId: string;
 	name: string;
 	createdAt: number;
 };
 
 export type ConversationMessage = {
-	userIdRoomId: string;
+	conversationId: string;
 	mid: number;
 	role: 'user' | 'assistant' | 'tool-call' | 'tool-result';
 	content: string; // original text content

@@ -1,5 +1,16 @@
 
+import { randomUUID } from 'crypto';
 import * as cheerio from 'cheerio';
+
+/**
+ * Generate a random number of random characters.
+ * 
+ * Intended for inclusion in chunks sent over the wire for security purposes. Chunks
+ * are otherwise more susceptible to snooping.
+ * 
+ * @returns 
+ */
+export const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
 /**
  * Extract "content"-like text from HTML using common patterns to ignore headers, footers,
@@ -9,7 +20,7 @@ export const extractContentFromHtml = (html: string): string => {
 	if (!html.includes('<html') && !html.includes('<!DOCTYPE')) {
 		return html;
 	}
-	
+
 	try {
 		console.log(`[HTML] Starting cheerio extraction from ${html.length} chars`);
 		

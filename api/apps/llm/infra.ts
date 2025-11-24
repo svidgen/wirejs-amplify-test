@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
 	DistributedTable,
 	LLM as LLMService,
@@ -10,13 +11,17 @@ import {
 import { fromAsync } from "./utils.js";
 import { Chunk, Conversation, ConversationMessage } from "./types.js";
 
+export type InvokeLLMOptions = {
+	systemPrompt: string;
+	history: LLMMessage[]
+};
 
 export class Infra extends Resource {
-	conversations: ReturnType<typeof makeConversationsTable>;
-	messages: ReturnType<typeof makeMessagesTable>;
-	realtime: ReturnType<typeof makeRealtimeService>;
-	llm: ReturnType<typeof makeLLMService>;
-	modelSetting: ReturnType<typeof makeModelsOverrideSetting>;
+	private conversations: ReturnType<typeof makeConversationsTable>;
+	private messages: ReturnType<typeof makeMessagesTable>;
+	private realtime: ReturnType<typeof makeRealtimeService>;
+	private llm: ReturnType<typeof makeLLMService>;
+	private modelSetting: ReturnType<typeof makeModelsOverrideSetting>;
 
 	constructor(scope: string | Resource, id: string) {
 		super(scope, id);
@@ -27,10 +32,46 @@ export class Infra extends Resource {
 		this.modelSetting = makeModelsOverrideSetting(this);
 	}
 
-	async getRawConversationHistory(userIdRoomId: string): Promise<ConversationMessage[]> {
+	async invokeLLM() {
+		// TODO: debounce this activity
+		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
+		if (overrides.length > 0) this.llm.models = overrides;
+
+		// TODO ...
+	}
+
+	async createConversation(userId: string): Promise<Conversation> {
+		const createdAt = Date.now();
+		const timestamp = new Date().toLocaleString();
+		const name = `Conversation ${timestamp}`
+
+		for (let i = 0; i < 10; i++) {
+			const conversationId = randomUUID();
+			const conversation = {
+				conversationId, userId, createdAt, name
+			} satisfies Conversation;
+			await this.conversations.save(conversation, { onlyIfNotExists: true });
+			return conversation;
+		}
+
+		throw new Error("Could not create a unique conversation ID!");
+	}
+
+	async updateConversationName(conversationId: string, name: string): Promise<void> {
+		const conversation = await this.getConversation(conversationId);
+		if (!conversation) throw new Error("Conversation doesn't exist.");
+		conversation.name = name;
+		await this.conversations.save(conversation);
+	}
+
+	async getConversation(conversationId: string): Promise<Conversation | undefined> {
+		return this.conversations.get({ conversationId });
+	}
+
+	async getRawConversationHistory(conversationId: string): Promise<ConversationMessage[]> {
 		const storedMessages = this.messages.query({
-			by: 'userIdRoomId-mid',
-			where: { userIdRoomId: { eq: userIdRoomId } }
+			by: 'conversationId-mid',
+			where: { conversationId: { eq: conversationId } }
 		});
 
 		// Convert async generator to array and sort by mid
@@ -39,21 +80,8 @@ export class Infra extends Resource {
 		return messagesArray;
 	};
 
-	async mapRawHistoryToMessages(messages: ConversationMessage[]) {
-		const history: LLMMessage[] = [];
-		for (const m of messages) {
-			if (m.role === 'user' || m.role === 'assistant') {
-				history.push({
-					role: m.role,
-					content: m.content
-				});
-			}
-		}
-		return history;
-	}
-
 	async storeMessage(
-		userIdRoomId: string,
+		conversationId: string,
 		mid: number,
 		role: ConversationMessage['role'],
 		content: string,
@@ -61,7 +89,7 @@ export class Infra extends Resource {
 		toolResult?: string
 	) {
 		const message: ConversationMessage = {
-			userIdRoomId,
+			conversationId,
 			mid,
 			role,
 			content,
@@ -83,8 +111,7 @@ const makeConversationsTable = (scope: Resource) => new DistributedTable(
 	{
 		parse: PassThruParser<Conversation>,
 		key: {
-			partition: { field: 'userId', type: 'string' },
-			sort: { field: 'roomId', type: 'string' }
+			partition: { field: 'conversationId', type: 'string' },
 		}
 	}
 );
@@ -95,7 +122,7 @@ const makeMessagesTable = (scope: Resource) => new DistributedTable(
 	{
 		parse: PassThruParser<ConversationMessage>,
 		key: {
-			partition: { field: 'userIdRoomId', type: 'string' },
+			partition: { field: 'conversationId', type: 'string' },
 			sort: { field: 'mid', type: 'number' }
 		}
 	}

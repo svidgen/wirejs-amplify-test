@@ -1,22 +1,22 @@
 import { Infra } from './infra.js'
+import { pad } from './utils.js';
 
 export const agenticHandler = (infra: Infra) => async (
 	room: string,
 	newUserMessage: string
 ) => {
 	try {
-		const overrides = (await infra.modelSetting.read()).split(',').map(s => s.trim());
-		if (overrides.length > 0) infra.llm.models = overrides;
+
 
 		// Load conversation history from database
-		const rawHistory = await getRawConversationHistory(room);
-		const history = mapRawHistoryToMessages(rawHistory);
+		const rawHistory = await infra.getRawConversationHistory(room);
+		const history = infra.mapRawHistoryToMessages(rawHistory);
 
 		const nextMid = rawHistory.length > 0 ?
 			Math.max(...rawHistory.map(m => m.mid)) + 1 : 0;
 
 		// Store the new user message
-		await storeMessage(room, nextMid, 'user', newUserMessage);
+		await infra.storeMessage(room, nextMid, 'user', newUserMessage);
 		history.push({ role: 'user', content: newUserMessage });
 
 		// If this is the first message (new conversation), save it with timestamped title
