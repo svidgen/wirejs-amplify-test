@@ -219,27 +219,9 @@ const assignConversationName = async (room: string, message: string) => {
 			history: [{ role: 'user', content: titlePrompt }],
 			timeoutSeconds: 10
 		});
-		
 		// Clean the title - remove quotes if they wrap the entire title
 		
-		
-		// Store/update conversation record with title
-		await conversations.save({
-			userId,
-			roomId,
-			name: cleanTitle,
-			createdAt: Date.now()
-		});
-		
-		// Send title update to client via realtime
-		await llmRealtimeService.publish(room, [{
-			mid: -1, // Special mid for metadata updates
-			seq: 0,
-			pad: pad(),
-			data: `**title-update**:${cleanTitle}`
-		}]);
-		
-		console.log(`Generated conversation title: "${cleanTitle}"`);
+	
 	} catch (error) {
 		console.error('Failed to generate conversation title:', error);
 	}

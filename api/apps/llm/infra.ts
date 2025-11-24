@@ -65,6 +65,11 @@ export class Infra extends Resource {
 		if (!conversation) throw new Error("Conversation doesn't exist.");
 		conversation.name = name;
 		await this.conversations.save(conversation);
+		await this.sendControlMessage(conversationId, {
+			instruction: 'setConversationField',
+			field: 'title',
+			value: name
+		});
 	}
 
 	async getConversation(conversationId: string): Promise<Conversation | undefined> {
