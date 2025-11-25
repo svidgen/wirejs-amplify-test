@@ -27,8 +27,8 @@ export const processToolResults = () => dedent`
 `;
 
 
-export const generateConversationTitle = () => dedent`
-	You generate short, descriptive conversation titles based on the user's initial message and the assistant's response.
+export const generateConversationTitle = (message: string) => dedent`
+	You generate short, descriptive conversation titles based on the user's initial message.
 
 	Rules:
 		- Return ONLY the title text, nothing else
@@ -41,6 +41,10 @@ export const generateConversationTitle = () => dedent`
 		- User asks to explain quantum physics -> "Quantum Physics Explanation"  
 		- User asks for recipe help -> "Recipe Assistance"
 		- User asks about programming -> "Programming Question"
+
+	Here is the message:
+		
+	${message}
 `;
 
 export const conversationPrompt = (tools: ToolDefinitions = {}) => dedent`

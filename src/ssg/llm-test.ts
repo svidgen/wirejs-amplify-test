@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { html, id, css, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, Chunk } from 'internal-api';
+import { llm, Chunk, ChunkData } from 'internal-api';
 
 type Role = 'assistant' | 'user';
 
@@ -90,7 +90,7 @@ class Message {
 
 		let md: string[] = [];
 		for (const c of this.chunks) {
-			if (typeof c.data !== 'string') {
+			if (c.data.type === 'text') {
 				md.push(c.data.text);
 			}
 		}
@@ -100,11 +100,11 @@ class Message {
 		// Don't filter here - let formatMessage() handle filtering on render
 		this.view.data.body = formatMessage(newContent);
 
-		if (chunk.data === '**start**') {
+		if (chunk.data.type === 'start') {
 			this.isDone = false;
-		} else if (chunk.data === '**end**') {
+		} else if (chunk.data.type === 'end') {
 			this.isDone = true;
-		} else if (chunk.data === '**tool-processing**') {
+		} else if (chunk.data.type === 'status' || chunk.data.type === 'title') {
 			// Keep the message in processing state during tool calls
 			this.isDone = false;
 		}
@@ -336,7 +336,7 @@ async function Chat() {
 				// Check if this conversation actually exists in database
 				// (empty conversations may not have been saved yet)
 				const conversations = await llm.getConversations(null);
-				const exists = conversations.some(conv => conv.roomId === self.activeRoom);
+				const exists = conversations.some(conv => conv.conversationId === self.activeRoom);
 				
 				if (exists) {
 					await llm.deleteConversation(null, self.activeRoom);
@@ -401,8 +401,8 @@ async function Chat() {
 					const startedAtBottom = self.isScrolledDownWithinMargin(50);
 					
 					// Handle special title update messages
-					if (typeof chunk.data === 'string' && chunk.data.startsWith('**title-update**:')) {
-						const newTitle = chunk.data.substring('**title-update**:'.length);
+					if (chunk.data.type === 'title') {
+						const newTitle = chunk.data.value;
 						self.updateConversationTitle(newTitle);
 						return; // Don't process as regular message
 					}
@@ -421,9 +421,9 @@ async function Chat() {
 					if (!message.isDone) {
 						isThinking = true;
 						// Show different status based on chunk type and content
-						if (chunk.data === '**tool-processing**') {
-							self.data.messageStatus = '💫 Waiting for external resources ...';
-						} else if (chunk.data === '**start**') {
+						if (chunk.data.type === 'status') {
+							self.data.messageStatus = `💫 ${chunk.data.status}`;
+						} else if (chunk.data.type === 'start') {
 							self.data.messageStatus = '💫 Thinking ...';
 						} else if (message.isWaitingForTools()) {
 							// If message has tool calls but no tool results yet, we're waiting for tools

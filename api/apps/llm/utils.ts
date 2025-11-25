@@ -13,6 +13,15 @@ import * as cheerio from 'cheerio';
 export const pad = () => randomUUID().slice(0, 1 + Math.floor(Math.random() * 16));
 
 /**
+ * Generate a 64 bit integer ID based on time and randomness. Suitable for
+ * non-globally unique IDs (sub-IDs) that just need to be sortable based on
+ * create or update time.
+ * 
+ * @returns
+ */
+export const intId = () => Math.floor((Date.now() + Math.random()) * 10_000);
+
+/**
  * Cleans up quotes from a title that may have been provided by an LLM.
  * 
  * @param title 

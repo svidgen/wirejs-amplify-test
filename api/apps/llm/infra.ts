@@ -3,6 +3,7 @@ import {
 	Context,
 	DistributedTable,
 	LLM as LLMService,
+	LLMChunk,
 	LLMMessage,
 	PassThruParser,
 	RealtimeService,
@@ -11,11 +12,17 @@ import {
 	User,
 } from "wirejs-resources";
 import { fromAsync, pad } from "./utils.js";
-import { Chunk, ControlMessage, Conversation, ConversationMessage } from "./types.js";
+import { Chunk, ChunkData, Conversation, ConversationMessage } from "./types.js";
 
-export type InvokeLLMOptions = {
+export type AssistOptions = {
 	systemPrompt: string;
-	history: LLMMessage[]
+	history: LLMMessage[];
+};
+
+export type RespondOptions = {
+	systemPrompt: string;
+	conversationId: string;
+	history: LLMMessage[];
 };
 
 export class Infra extends Resource {
@@ -34,12 +41,64 @@ export class Infra extends Resource {
 		this.modelSetting = makeModelsOverrideSetting(this);
 	}
 
-	async invokeLLM() {
+	async assist(options: AssistOptions): Promise<LLMMessage> {
+		// TODO: debounce this activity
+		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
+		if (overrides.length > 0) this.llm.models = overrides;
+		return this.llm.continueConversation({
+			systemPrompt: options.systemPrompt,
+			history: options.history
+		});
+	}
+
+	async respond(options: RespondOptions): Promise<ConversationMessage> {
 		// TODO: debounce this activity
 		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) this.llm.models = overrides;
 
-		// TODO ...
+		const mid = options.history.length;
+
+		// responses are not stream directly because they're unnecessarily frequent.
+		// we slow this down, send messages in batches to reduce unnecessary cost.
+		let seq = 0;
+		let batch: string[] = [];
+		let lastBatch = new Date().getTime();
+
+		const onChunk = options.conversationId ?
+			(async (chunk: LLMChunk) => {
+				batch.push(chunk.message.content);
+				if (new Date().getTime() - lastBatch > 150) {
+					const text = batch.join('');
+					batch = [];
+					await this.realtime.publish(options.conversationId, [{
+						mid,
+						seq: seq++,
+						pad: pad(),
+						data: { type: 'text', text }
+					}]);
+					lastBatch = new Date().getTime();
+				}
+			}) : undefined
+		;
+
+		const result = await this.llm.continueConversation({
+			systemPrompt: options.systemPrompt,
+			history: options.history,
+			onChunk
+		})
+
+		
+		if (batch.length > 0) {
+			const text = batch.join('');
+			await this.realtime.publish(options.conversationId, [{
+				mid,
+				seq: seq++,
+				pad: pad(),
+				data: { type: 'text', text }
+			}]);
+		}
+
+		return this.addMessage(options.conversationId, mid, 'assistant', result.content);
 	}
 
 	async createConversation(user: User): Promise<Conversation> {
@@ -66,8 +125,7 @@ export class Infra extends Resource {
 		conversation.name = name;
 		await this.conversations.save(conversation);
 		await this.sendControlMessage(conversationId, {
-			instruction: 'setConversationField',
-			field: 'title',
+			type: 'title',
 			value: name
 		});
 	}
@@ -120,7 +178,7 @@ export class Infra extends Resource {
 		await Promise.all(messagesToDelete.map(msg => this.messages.delete(msg)));
 	}
 
-	async getRawConversationHistory(conversationId: string): Promise<ConversationMessage[]> {
+	async getHistory(conversationId: string): Promise<ConversationMessage[]> {
 		const storedMessages = this.messages.query({
 			by: 'conversationId-mid',
 			where: { conversationId: { eq: conversationId } }
@@ -137,16 +195,12 @@ export class Infra extends Resource {
 		mid: number,
 		role: ConversationMessage['role'],
 		content: string,
-		toolCall?: any,
-		toolResult?: string
 	): Promise<ConversationMessage> {
 		const message: ConversationMessage = {
 			conversationId,
 			mid,
 			role,
 			content,
-			toolCall,
-			toolResult,
 			createdAt: Date.now()
 		};
 
@@ -158,7 +212,7 @@ export class Infra extends Resource {
 		return this.realtime.getStream(context, conversationId);
 	}
 
-	async sendControlMessage(conversationId: string, data: ControlMessage): Promise<void> {
+	async sendControlMessage(conversationId: string, data: ChunkData): Promise<void> {
 		await this.realtime.publish(conversationId, [{
 			mid: -1,
 			seq: 0,

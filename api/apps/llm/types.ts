@@ -4,14 +4,15 @@ export type Chunk = {
 	mid: number;
 	seq: number;
 	pad: string; // security padding
-	data: MinimalChunk | ControlMessage;
+	data: ChunkData;
 }
 
-export type ControlMessage =
-	| { instruction: 'start' }
-	| { instruction: 'end' }
-	| { instruction: 'setConversationField', field: 'title', value: string }
-	| { instruction: 'setStatus', status: string }
+export type ChunkData =
+	| { type: 'start' }
+	| { type: 'end' }
+	| { type: 'title', value: string }
+	| { type: 'status', status: string }
+	| { type: 'text', text: string }
 ;
 
 export type Conversation = {
@@ -24,16 +25,9 @@ export type Conversation = {
 export type ConversationMessage = {
 	conversationId: string;
 	mid: number;
-	role: 'user' | 'assistant' | 'tool-call' | 'tool-result';
-	content: string; // original text content
-	toolCall?: {
-		tool: string;
-		args: any[];
-		instruction?: string;
-	};
-	toolResult?: string;
+	role: 'user' | 'assistant';
+	content: string;
 	createdAt: number;
-	chunks?: Chunk[]; // for streaming assistant messages
 };
 
 export type ToolDefinition = {
@@ -44,7 +38,3 @@ export type ToolDefinition = {
 export type ToolDefinitions = Record<string, ToolDefinition>;
 
 export type Message = LLMMessage;
-
-export type MinimalChunk = {
-	text: string;
-};
