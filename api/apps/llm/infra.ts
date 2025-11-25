@@ -213,9 +213,9 @@ export class Infra extends Resource {
 		return this.realtime.getStream(context, conversationId);
 	}
 
-	async sendControlMessage(conversationId: string, data: ChunkData): Promise<void> {
+	async sendControlMessage(conversationId: string, data: ChunkData, mid: number = -1): Promise<void> {
 		await this.realtime.publish(conversationId, [{
-			mid: -1,
+			mid,
 			seq: 0,
 			pad: pad(),
 			data

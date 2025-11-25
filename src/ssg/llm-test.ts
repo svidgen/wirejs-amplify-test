@@ -109,16 +109,6 @@ class Message {
 			this.isDone = false;
 		}
 	}
-
-	// Check if the message content contains a tool call
-	hasToolCall(): boolean {
-		return /TOOL:\w+\s+[^\[\r\n]+?(?:\s*\[INSTRUCTION:\s*[^\]]+\])?/.test(this.originalContent);
-	}
-
-	// Check if this message appears to be waiting for tools (has tool call but no tool results yet)
-	isWaitingForTools(): boolean {
-		return this.hasToolCall() && !/<tool-result>/.test(this.originalContent);
-	}
 }
 
 async function Chat() {
@@ -338,20 +328,14 @@ async function Chat() {
 			if (!self.activeRoom) return;
 			
 			try {
-				// Check if this conversation actually exists in database
-				// (empty conversations may not have been saved yet)
-				const conversations = await llm.getConversations(null);
-				const exists = conversations.some(conv => conv.conversationId === self.activeRoom);
-				
-				if (exists) {
-					await llm.deleteConversation(null, self.activeRoom);
-				}
+				await llm.deleteConversation(null, self.activeRoom);
 				
 				// Clear UI and start new conversation
 				self.data.messages.splice(0);
 				messageIndex.clear();
 				self.data.conversationSelect.value = "";
 				self.data.deleteConversationBtn.disabled = true;
+				self.activeRoom = undefined;
 				
 				// Create new room
 				self.disconnect();
@@ -394,7 +378,6 @@ async function Chat() {
 			self.disconnect();
 			
 			const roomStream = await llm.getRoom(null, self.activeRoom);
-			let isThinking = false;
 			self.disconnect = roomStream.subscribe({
 				onopen() {
 					self.data.status = `Connected.`;
@@ -406,9 +389,14 @@ async function Chat() {
 					if (chunk.data.type === 'title') {
 						const newTitle = chunk.data.value;
 						self.updateConversationTitle(newTitle);
-						return; // Don't process as regular message
+						return;
 					}
-					
+
+					if (chunk.data.type === 'start') {
+						self.data.messageStatus = '💫 Thinking ...';
+						return;
+					}
+
 					let message: Message;
 					if (messageIndex.has(chunk.mid)) {
 						message = messageIndex.get(chunk.mid)!;
@@ -417,19 +405,13 @@ async function Chat() {
 						self.data.messages.push(message);
 						messageIndex.set(chunk.mid, message);
 					}
-					
+
 					message.appendChunk(chunk);
 
 					if (!message.isDone) {
-						isThinking = true;
 						// Show different status based on chunk type and content
 						if (chunk.data.type === 'status') {
 							self.data.messageStatus = `💫 ${chunk.data.status}`;
-						} else if (chunk.data.type === 'start') {
-							self.data.messageStatus = '💫 Thinking ...';
-						} else if (message.isWaitingForTools()) {
-							// If message has tool calls but no tool results yet, we're waiting for tools
-							self.data.messageStatus = '💫 Waiting for external resources ...';
 						} else {
 							// Otherwise we're writing content
 							self.data.messageStatus = '💫 Writing ...';
@@ -437,7 +419,6 @@ async function Chat() {
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else {
-						isThinking = false;
 						self.data.messageStatus = '';
 						self.data.submitButton.disabled = false;
 						self.data.message.disabled = false;

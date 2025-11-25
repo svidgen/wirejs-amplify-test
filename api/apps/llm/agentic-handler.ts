@@ -35,7 +35,7 @@ export const agenticHandler = (infra: Infra) => async (
 		// Add assistant response to working history
 		// history.push(result);
 
-		await infra.sendControlMessage(room, { type: 'end' });
+		await infra.sendControlMessage(room, { type: 'end' }, mid);
 
 	} catch (error) {
 		console.error('=== LLM Error ===');
