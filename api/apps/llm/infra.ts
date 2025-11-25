@@ -15,15 +15,22 @@ import { fromAsync, pad } from "./utils.js";
 import { Chunk, ChunkData, Conversation, ConversationMessage } from "./types.js";
 
 export type AssistOptions = {
-	systemPrompt: string;
+	systemPromptOverride?: string;
 	history: LLMMessage[];
+} | {
+	systemPromptOverride?: string;
+	prompt: string;
 };
 
 export type RespondOptions = {
-	systemPrompt: string;
 	conversationId: string;
 	history: LLMMessage[];
+	systemPromptOverride?: string;
 };
+
+export type InfraOptions = {
+	systemPrompt?: string;
+}
 
 export class Infra extends Resource {
 	private conversations: ReturnType<typeof makeConversationsTable>;
@@ -32,27 +39,31 @@ export class Infra extends Resource {
 	private llm: ReturnType<typeof makeLLMService>;
 	private modelSetting: ReturnType<typeof makeModelsOverrideSetting>;
 
-	constructor(scope: string | Resource, id: string) {
+	constructor(scope: string | Resource, id: string, options?: InfraOptions) {
 		super(scope, id);
 		this.conversations = makeConversationsTable(this);
 		this.messages = makeMessagesTable(this);
 		this.realtime = makeRealtimeService(this);
-		this.llm = makeLLMService(this);
+		this.llm = makeLLMService(this, options?.systemPrompt);
 		this.modelSetting = makeModelsOverrideSetting(this);
 	}
 
 	async assist(options: AssistOptions): Promise<LLMMessage> {
-		// TODO: debounce this activity
+		// TODO: debounce and/or redesign model settings relationship
 		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) this.llm.models = overrides;
+
 		return this.llm.continueConversation({
-			systemPrompt: options.systemPrompt,
-			history: options.history
+			systemPrompt: options.systemPromptOverride,
+			history: 'history' in options ? options.history : [{
+				role: 'user',
+				content: options.prompt
+			}]
 		});
 	}
 
 	async respond(options: RespondOptions): Promise<ConversationMessage> {
-		// TODO: debounce this activity
+		// TODO: debounce and/or redesign model settings relationship
 		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) this.llm.models = overrides;
 
@@ -82,11 +93,10 @@ export class Infra extends Resource {
 		;
 
 		const result = await this.llm.continueConversation({
-			systemPrompt: options.systemPrompt,
+			systemPrompt: options.systemPromptOverride,
 			history: options.history,
 			onChunk
-		})
-
+		});
 		
 		if (batch.length > 0) {
 			const text = batch.join('');
@@ -134,20 +144,13 @@ export class Infra extends Resource {
 		return this.conversations.get({ conversationId });
 	}
 
-	async listUserConversations(user: User) {
+	async listUserConversations(user: User): Promise<Conversation[]> {
 		const conversationsGen = this.conversations.query({
 			by: 'userId-createdAt',
 			where: { userId: { eq: user.id } }
 		});
-		const conversationsArray = await fromAsync(conversationsGen);
-		return conversationsArray
-			.sort((a, b) => b.createdAt - a.createdAt) // Most recent first
-			.map(c => ({
-				conversationId: c.conversationId,
-				name: c.name || 'Untitled Conversation',
-				createdAt: c.createdAt
-			}))
-		;
+		const conversations: Conversation[] = await fromAsync(conversationsGen);
+		return conversations.sort((a, b) => b.createdAt - a.createdAt);
 	}
 
 	async assertUserIsAuthorized(
@@ -157,10 +160,8 @@ export class Infra extends Resource {
 		if (typeof conversation === 'string') {
 			const record = await this.getConversation(conversation);
 			return this.assertUserIsAuthorized(user, record);
-		} else {
-			if (conversation?.userId !== user.id) {
-				throw new Error("Not authorized");
-			}
+		} else if (conversation?.userId !== user.id) {
+			throw new Error("Not authorized");
 		}
 	}
 
@@ -253,8 +254,9 @@ const makeMessagesTable = (scope: Resource) => new DistributedTable(
 	}
 );
 
-const makeLLMService = (scope: Resource) => new LLMService(scope, 'llm', {
-	models: ['llama3.2', 'llama3:8b', 'llama2']
+const makeLLMService = (scope: Resource, systemPrompt?: string) => new LLMService(scope, 'llm', {
+	models: ['llama3.2', 'llama3:8b', 'llama2'],
+	systemPrompt
 });
 
 const makeModelsOverrideSetting = (scope: Resource) => new Setting(scope, 'models', {

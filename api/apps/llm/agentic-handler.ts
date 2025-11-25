@@ -2,16 +2,16 @@ import { Infra } from './infra.js'
 import { pad, cleanTitle } from './utils.js';
 import { generateConversationTitle } from './prompts.js';
 
-const assignConversationName = async (infra: Infra, conversaidId: string, message: string) => {
+const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
 	const titleResponse = await infra.assist({
-		systemPrompt: generateConversationTitle(message),
-		history: []
+		prompt: generateConversationTitle(message),
 	});
 	const name = cleanTitle(titleResponse.content);
-	await infra.updateConversationName(conversaidId, name);
+	console.log('name assigned', name, titleResponse);
+	await infra.updateConversationName(conversationId, name);
 }
 
-export const agenticHandler = (infra: Infra, systemPrompt: string) => async (
+export const agenticHandler = (infra: Infra) => async (
 	room: string,
 	newUserMessage: string
 ) => {
@@ -27,10 +27,9 @@ export const agenticHandler = (infra: Infra, systemPrompt: string) => async (
 
 		await infra.sendControlMessage(room, { type: 'start' });
 
-		const result = await infra.respond({
+		await infra.respond({
 			conversationId: room,
 			history,
-			systemPrompt
 		});
 
 		// Add assistant response to working history

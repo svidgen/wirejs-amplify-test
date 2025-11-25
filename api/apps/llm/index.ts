@@ -5,7 +5,7 @@ import {
 } from "wirejs-resources";
 import { agenticHandler } from "./agentic-handler.js";
 import { Infra } from "./infra.js";
-export type { Chunk, ChunkData } from './types.js';
+export type { Chunk, ChunkData, Conversation, ConversationMessage } from './types.js';
 
 // const callTools = async (message: string): Promise<string | undefined> => {
 // 	try {
@@ -167,10 +167,8 @@ export type { Chunk, ChunkData } from './types.js';
 
 
 export const LLM = (auth: AuthenticationApi) => {
-	const infra = new Infra('app', 'llm');
-	const chatRunner = new BackgroundJob('app', 'chatRunner', {
-		handler: agenticHandler(infra, "You are a helpful assistant.")
-	});
+	const infra = new Infra('app', 'llm', { systemPrompt: "You are a helpful assistant." });
+	const chatRunner = new BackgroundJob('app', 'chatRunner', { handler: agenticHandler(infra) });
 
 	return withContext(context => ({
 		async send(room: string, message: string) {

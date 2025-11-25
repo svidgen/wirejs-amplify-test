@@ -3,7 +3,7 @@ import DOMPurify from 'dompurify';
 import { html, id, css, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, Chunk, ChunkData } from 'internal-api';
+import { llm, Chunk, ChunkData, Conversation } from 'internal-api';
 
 type Role = 'assistant' | 'user';
 
@@ -150,8 +150,7 @@ async function Chat() {
 			onsubmit=${async (event: Event) => {
 				event.preventDefault();
 				if (!self.activeRoom) {
-					self.data.status = "Not connected!";
-					return;
+					await self.createConversation();
 				}
 				
 				const userMessage = self.data.message.value.trim();
@@ -167,7 +166,7 @@ async function Chat() {
 				self.autoscroll();
 				
 				// Send only the latest user message to the server
-				llm.send(null, self.activeRoom, userMessage).catch(error => {
+				llm.send(null, self.activeRoom!, userMessage).catch(error => {
 					console.error(error);
 					self.data.status = 'Error. Try again.';
 					self.data.message.disabled = false;
@@ -241,11 +240,11 @@ async function Chat() {
 		</div></form>
 
 		<!-- Connection status -->
-		<span style='color: var(--color-muted)'>${text('status', 'Connecting ...')}</span>
+		<span style='color: var(--color-muted)'>${text('status', 'Just waiting for you!')}</span>
 
 	</div>`.extend(() => ({
 		activeRoom: undefined as string | undefined,
-		conversations: [] as any[],
+		conversations: [] as Conversation[],
 		
 		isScrolledDownWithinMargin(margin: number) {
 			const container = self.data.messageContainer;
@@ -275,7 +274,7 @@ async function Chat() {
 				// Add conversation options
 				for (const conv of self.conversations) {
 					const option = document.createElement('option');
-					option.value = conv.roomId;
+					option.value = conv.conversationId;
 					option.text = conv.name;
 					select.add(option);
 				}
@@ -283,9 +282,9 @@ async function Chat() {
 				console.error('Failed to load conversations:', error);
 			}
 		},
-		
-		async loadConversation(roomId: string) {
-			if (!roomId) {
+
+		async createConversation() {
+			try {
 				// New conversation - just create room, don't save to database yet
 				self.disconnect(); 
 				self.activeRoom = await llm.createRoom(null);
@@ -297,8 +296,13 @@ async function Chat() {
 				self.data.deleteConversationBtn.disabled = true; // Can't delete unsaved conversations
 				await self.connect();
 				return;
+			} catch (error) {
+				console.error('Failed to create conversation:', error);
+				self.data.status = 'Error creating conversation.';
 			}
-			
+		},
+		
+		async loadConversation(roomId: string) {
 			try {
 				// Load conversation history
 				const history = await llm.getHistory(null, roomId);
@@ -350,12 +354,9 @@ async function Chat() {
 				
 				// Create new room
 				self.disconnect();
-				self.activeRoom = await llm.createRoom(null);
-				await self.connect();
 				
 				// Reload conversation list
 				await self.loadConversations();
-				
 			} catch (error) {
 				console.error('Failed to delete conversation:', error);
 				self.data.status = 'Error deleting conversation.';
@@ -473,7 +474,6 @@ async function Chat() {
 		});
 		
 		// Start with new conversation
-		await self.loadConversation("");
 		self.data.message.value = '';
 	});
 	return self;
