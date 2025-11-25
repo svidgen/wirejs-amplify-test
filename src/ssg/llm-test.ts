@@ -304,22 +304,23 @@ async function Chat() {
 		
 		async loadConversation(roomId: string) {
 			try {
-				// Load conversation history
-				const history = await llm.getHistory(null, roomId);
-				
-				// Clear current messages
-				self.data.messages.splice(0);
-				messageIndex.clear();
-				
-				// Add history messages to UI
-				for (const msg of history) {
-					const message = new Message(msg.role as 'user' | 'assistant', msg.content);
-					self.data.messages.push(message);
-				}
-				
-				// Set active room and connect
-				if (self.activeRoom !== roomId) {
+				if (roomId !== self.activeRoom) {
+					// reset states to blank.
+					self.activeRoom = undefined;
 					self.disconnect();
+					self.data.messages.splice(0);
+					messageIndex.clear();
+				}
+
+				if (roomId) {
+					// Load conversation history
+					const history = await llm.getHistory(null, roomId);
+					for (const msg of history) {
+						const message = new Message(msg.role as 'user' | 'assistant', msg.content);
+						self.data.messages.push(message);
+					}
+					
+					// Set active room and connect
 					self.activeRoom = roomId;
 					await self.connect();
 				}
