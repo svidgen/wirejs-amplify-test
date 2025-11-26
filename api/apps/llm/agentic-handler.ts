@@ -18,8 +18,17 @@ const hasTools = Object.keys(tools).length > 0;
 function findInstruction(response: string) {
 	for (const rawLine of response.split("\n")) {
 		const line = rawLine.trim();
-		if (line.toLowerCase().startsWith('yes:')) {
-			return line.substring('yes:'.length);
+		if (line.toLowerCase().startsWith('act:')) {
+			return line.substring('act:'.length);
+		}
+	}
+}
+
+function findGuidance(response: string) {
+	for (const rawLine of response.split("\n")) {
+		const line = rawLine.trim();
+		if (line.toLowerCase().startsWith('hint:')) {
+			return line.substring('hint:'.length);
 		}
 	}
 }
@@ -38,13 +47,10 @@ export const agenticHandler = (infra: Infra) => async (
 		history.push(await infra.addMessage(room, mid++, 'user', newUserMessage));
 
 		// context blocks for sub-agents
-		const transcript = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n')
-		const toolDescriptions = Object.entries(tools)
-			.map(([name, def]) => `### ${name}:\n${def.description}`)
-			.join('\n\n---\n\n');
-		const toolUsages = Object.entries(tools)
-			.map(([name, def]) => `### ${name}\n\nARGUMENTS:\n\n${def}`)
-			.join('\n\n---\n\n');
+		const transcript = history.map(h =>
+			`${h.role.toUpperCase()}: ${h.content}`.replace(/\n|\r/g, ' ')
+		).join('\n')
+		const toolDescriptions = JSON.stringify(tools);
 
 		// if we're just getting started, we want a user friendly conversation title.
 		if (mid === 1) {
@@ -56,6 +62,9 @@ export const agenticHandler = (infra: Infra) => async (
 
 		// TODO: restore existing context
 		const context: Record<string, string> = {};
+
+		let analysis = 'Respond normally.'
+
 		do {
 			if (!hasTools) break;
 			await infra.sendControlMessage(room, {
@@ -64,16 +73,9 @@ export const agenticHandler = (infra: Infra) => async (
 			});
 			const nextStepOutput = await infra.assist({
 				prompt: dedent`
-					Hi. I need you to analyze a conversation. Review the following:
-
-					1. Conversation
-					2. Completed actions
-					3. Available actions
-
-					THEN complete your assigned task.
-
-					## CONVERSATION:
-					${transcript}
+					Your job is analyze a transcript between USER and ASSISTANT. I will provide
+					existing context, available actions, and the conversation transcript.
+					You must tell me whether any of the AVAILABLE ACTIONS is warranted.
 
 					## EXISTING CONTEXT:
 					${JSON.stringify(context, null, 2)}
@@ -81,39 +83,52 @@ export const agenticHandler = (infra: Infra) => async (
 					## AVAILABLE ACTIONS:
 					${toolDescriptions}
 
-					# YOUR TASK:
-					Tell me if the transcript strongly warrants the use of any of the previously
-					listed AVAILABLE ACTIONS. If so, please respond with "YES: use ACTION_NAME
-					with parameters X... to do Y". Start your decision line with "YES:" and be
-					sure to include the tool name directly.
-
-					Otherwise, you can conclude with something like "NO: no actions are needed".
+					## CONVERSATION TRANSCRIPT:
+					${transcript}
 					
-					Feel free to think aloud.
+					Write a brief analysis using this template:
+
+					I have analyzed the transcript and considered existing context and the
+					available tools. Here is my analysis:
+
+					Summary of Context: ___
+					Summary of Transcript: ___
+					Potentially Relevant Actions: ___
+					In conclusion, because ___, the most natural next step for ASSISTANT would be
+					to (respond in character | use action ___ with arguments ___).
+					In order to do this, ASSISTANT might need to know ___.
 				`
 			});
 			try {
-				const thinking = nextStepOutput.content.trim();
-				const step = findInstruction(thinking);
-				console.log({ thinking, step });
+				analysis = nextStepOutput.content.trim();
+				// const step = findInstruction(thinking);
+				// const guidance = findGuidance(thinking);
 
-				if (!step) break;
+				console.log({ analysis });
 
-				await infra.sendControlMessage(room, {
-					type: 'status',
-					status: `Working on ${step.substring(0, 20)} ...`
-				});
 				const args = JSON.parse((await infra.assist({
-					prompt: formatToolArguments(toolUsages, step)
+					prompt: formatToolArguments(toolDescriptions, analysis)
 				})).content) as string[];
-				const toolResult = await standard[args[0]].execute(...args.slice(1));
 
-				// NOTE! Here's where we potentially need chunked processing.
-				const processedResult = (await infra.assist({
-					prompt: processToolResults(toolResult, step)
-				})).content;
+				const key = JSON.stringify(args);
 
-				context[step] = processedResult;
+				if (standard[args[0]]) {
+					await infra.sendControlMessage(room, {
+						type: 'status',
+						status: `Working ...`
+					});
+
+					const toolResult = await standard[args[0]].execute(...args.slice(1));
+
+					// NOTE! Here's where we potentially need chunked processing.
+					const processedResult = (await infra.assist({
+						prompt: processToolResults(toolResult, key)
+					})).content;
+
+					context[key] = processedResult;
+				} else {
+					maxIterations = 0;
+				}
 
 				// TODO: save existing context
 			} catch {
@@ -132,7 +147,7 @@ export const agenticHandler = (infra: Infra) => async (
 			conversationId: room,
 			mid,
 			prompt: dedent`
-				Your job is to generate the NEXT assistant message to send to USER.
+				Your job is to generate the NEXT ASSISTANT message to send to USER.
 				You are NOT speaking to me. I'm just a proxy!
 				You are writing a reply that will be sent directly to the user.
 
@@ -144,6 +159,9 @@ export const agenticHandler = (infra: Infra) => async (
 
 				PREPARED CONTEXT:
 				${JSON.stringify(context, null, 2)}
+
+				PREPARED ANALYSIS:
+				${analysis}
 
 				CONVERSATION:
 				${transcript}

@@ -4,10 +4,10 @@ import type { ToolDefinitions } from "./types.js";
 export const standard: ToolDefinitions = {
 	webFetch: {
 		description: dedent`
-			Fetches web content from a URL.
+			Fetches content from the web by URL.
 		`,
 		arguments: dedent`
-			1. URL: string
+			1. url: string
 		`,
 		async execute(url: string) {
 			console.log(`[webFetch] Starting comprehensive analysis for: ${url}`);

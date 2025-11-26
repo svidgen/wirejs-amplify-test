@@ -2,12 +2,15 @@ import { dedent } from "./utils.js";
 import type { ToolDefinitions } from "./types.js";
 
 export const formatToolArguments = (tools: string, instructions: string) => dedent`
-	I need you to act as a tool argument formatter. Your only job is to:
+	I need you to review an analysis. Your job is to:
 
-	1. Examine the specific instructions
-	2. Extract the exact arguments needed for the specified tool
-	3. Return ONLY a JSON array of arguments, nothing else
-	4. First argument is the name of the tool
+	1. Examine the analysis
+	2. Return a JSON array
+
+	If the analysis indicates the need for a specific action:
+	1. Extract the exact arguments needed for the specified tool
+	2. Return ONLY a JSON array of arguments, nothing else
+	3. First argument is the name of the tool
 
 	Examples:
 	- "get the content from https://example.com using the webFetch tool" -> ["webFetch", "https://example.com"]
@@ -18,8 +21,10 @@ export const formatToolArguments = (tools: string, instructions: string) => dede
 	AVAILABLE TOOLS:
 	${tools}
 
-	INSTRUCTION:
+	ANALYSIS:
 	${instructions}
+
+	If no tool call is needed, respond with an empty array.
 
 	YOUR TASK:
 	Return ONLY the raw JSON array. Do NOT wrap it in markdown code blocks or backticks. Do NOT add any explanations.
