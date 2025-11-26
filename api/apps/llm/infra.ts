@@ -26,6 +26,11 @@ export type RespondOptions = {
 	conversationId: string;
 	history: LLMMessage[];
 	systemPromptOverride?: string;
+} | {
+	conversationId: string;
+	mid: number;
+	prompt: string;
+	systemPromptOverride?: string;
 };
 
 export type InfraOptions = {
@@ -67,7 +72,7 @@ export class Infra extends Resource {
 		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) this.llm.models = overrides;
 
-		const mid = options.history.length;
+		const mid = 'mid' in options ? options.mid : options.history.length;
 
 		// responses are not stream directly because they're unnecessarily frequent.
 		// we slow this down, send messages in batches to reduce unnecessary cost.
@@ -94,7 +99,10 @@ export class Infra extends Resource {
 
 		const result = await this.llm.continueConversation({
 			systemPrompt: options.systemPromptOverride,
-			history: options.history,
+			history: 'history' in options ? options.history : [{
+				role: 'user',
+				content: options.prompt
+			}],
 			onChunk
 		});
 		
