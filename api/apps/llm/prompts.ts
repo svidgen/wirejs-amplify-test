@@ -10,8 +10,10 @@ export const formatToolArguments = (tools: string, instructions: string) => dede
 	4. First argument is the name of the tool
 
 	Examples:
-	- "get the content from https://example.com using the httpGet tool" -> ["httpGet", "https://example.com"]
-	- "fetch data from api.weather.com/current for calculate tool" -> ["calculate", "https://api.weather.com/current"]
+	- "get the content from https://example.com using the webFetch tool" -> ["webFetch", "https://example.com"]
+	- "fetch data from api.weather.com/current for calculate tool" -> ["calculate", "1 + 2"]
+
+	These are just examples. The real list of available tools is here:
 
 	AVAILABLE TOOLS:
 	${tools}

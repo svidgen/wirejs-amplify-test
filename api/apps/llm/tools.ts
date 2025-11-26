@@ -5,16 +5,14 @@ export const standard: ToolDefinitions = {
 	webFetch: {
 		description: dedent`
 			Fetches and analyzes web content. Use when:
-
 			1. User asks about specific websites/URLs
 			2. User wants latest/recent news or information
 			3. Topic changes frequently and your knowledge may be outdated
 			4. Conversation critically requires accurate current data
 			5. User needs information you would not have from training
 			6. User explicitly requests external/web content.
-			
-			Usage: TOOL:webFetch https://example.com [INSTRUCTIONS: your processing instructions
 		`,
+		arguments: ['url: string'],
 		async execute(url: string) {
 			console.log(`[webFetch] Starting comprehensive analysis for: ${url}`);
 

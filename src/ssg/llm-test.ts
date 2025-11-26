@@ -397,6 +397,11 @@ async function Chat() {
 						return;
 					}
 
+					if (chunk.data.type === 'status') {
+						self.data.messageStatus = `💫 ${chunk.data.status}`;
+						return;
+					}
+
 					let message: Message;
 					if (messageIndex.has(chunk.mid)) {
 						message = messageIndex.get(chunk.mid)!;
@@ -409,13 +414,7 @@ async function Chat() {
 					message.appendChunk(chunk);
 
 					if (!message.isDone) {
-						// Show different status based on chunk type and content
-						if (chunk.data.type === 'status') {
-							self.data.messageStatus = `💫 ${chunk.data.status}`;
-						} else {
-							// Otherwise we're writing content
-							self.data.messageStatus = '💫 Writing ...';
-						}
+						self.data.messageStatus = '💫 Writing ...';
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else {

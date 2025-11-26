@@ -24,9 +24,14 @@ export const agenticHandler = (infra: Infra) => async (
 		const history = await infra.getHistory(room);
 		let mid = history.length;
 		history.push(await infra.addMessage(room, mid++, 'user', newUserMessage));
+
+		// context blocks for sub-agents
 		const transcript = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n')
-		const toolsBlock = Object.entries(standard)
-			.map(([name, def]) => `${name}: ${def.description}`)
+		const toolDescriptions = Object.entries(standard)
+			.map(([name, def]) => `### ${name}:\n${def.description}`)
+			.join('\n---\n\n');
+		const toolUsages = Object.entries(standard)
+			.map(([name, def]) => `- ${JSON.stringify([name, ...def.arguments])}`)
 			.join('\n');
 
 		// if we're just getting started, we want a user friendly conversation title.
@@ -36,59 +41,76 @@ export const agenticHandler = (infra: Infra) => async (
 
 		// AGENTIC LOOP
 		let maxIterations = 3;
+		let steps: string[] = [];
+
+		// TODO: restore existing context
 		const context: Record<string, string> = {};
 		do {
 			await infra.sendControlMessage(room, {
 				type: 'status',
 				status: "Planning ..."
 			});
-			maxIterations--;
 			const nextSteps = await infra.assist({
 				prompt: dedent`
 					Your job is to plan any next steps we should to do before responding to
-					USER as ASSISTANT. Examine the chat history and respond with a JSON array
-					of strings and ONLY a JSON array of strings to explicitly instruct
-					subagents to use specific tools.
+					USER as ASSISTANT using the available tools.
 
-					If no sub-agent action is required, just respond with an empty array.
+					## AVAILABLE TOOLS:
+					${toolDescriptions}
 
-					ALREADY COMPLETED STEPS:
-					${Object.entries(context).map(([k, v]) => `"${k}": ${v}`).join('\n')}
+					## ALREADY COMPLETE STEPS (\`Record<string, string>\`):
+					${JSON.stringify(context, null, 2)}
 
-					AVAILABLE TOOLS:
-					${toolsBlock}
-
-					CONVERSATION:
+					## CONVERSATION:
 					${transcript}
 
-					TASK:
-					As mentioned above. Respond with a JSON array of strings to use as
-					instructions for sub-agents. No other formatting.
+					## GUIDANCE:
+					- Each step must be high level instructions for a subordinate agent.
+					- Each step must refer to one specific AVAILABLE TOOL.
+					- The subordinate agent will manage tool invocation and result interpretation.
+					- Refer to the individual guidance on each tool entry.
+					- Your response must be JSON array of strings ONLY. (Type \`string[]\`.)
+					- Do NOT return any additional formatting, spacing, etc..
+					- If there are not relevant subtasks, return an empty array (\`[]\`).
+
+					## YOUR TASK:
+					Write the JSON array of steps.
 				`
 			});
 			try {
-				const steps = JSON.parse(nextSteps.content.trim()) as string[];
+				steps = JSON.parse(nextSteps.content.trim());
 				console.log('steps', steps);
 				for (const step of steps) {
 					await infra.sendControlMessage(room, {
 						type: 'status',
-						status: `Working on ${step.slice(0, 20)} ...`
-					})
+						status: `Working on ${step.substring(0, 20)} ...`
+					});
 					const args = JSON.parse((await infra.assist({
-						prompt: formatToolArguments(toolsBlock, step)
-					})).content);
+						prompt: formatToolArguments(toolUsages, step)
+					})).content) as string[];
 					const toolResult = await standard[args[0]].execute(...args.slice(1));
+
+					// NOTE! Here's where we potentially need chunked processing.
 					const processedResult = (await infra.assist({
 						prompt: processToolResults(toolResult, step)
 					})).content;
+
 					context[step] = processedResult;
+
+					// TODO: save existing context
 				}
 			} catch {
 				// meh
 			}
-		} while (maxIterations > 0);
+		} while (steps.length > 0 && --maxIterations > 0);
+
+		console.log('final context', context);
 
 		// FINAL AGENT RESPONSE
+		await infra.sendControlMessage(room, {
+			type: 'status',
+			status: `Writing ...`
+		})
 		await infra.respond({
 			conversationId: room,
 			mid,
@@ -103,8 +125,8 @@ export const agenticHandler = (infra: Infra) => async (
 				If the context is highly unusual or controversial and is relevant to your
 				response, present it neutrally and without endorsing it.
 
-				POTENTIALLY RELEVANT CONTEXT:
-				New quantum research shows the Earth is actually "mathematically flat." ([Wikipedia](https://en.wikipedia.org/wiki/Earth))
+				PREPARED CONTEXT:
+				${JSON.stringify(context, null, 2)}
 
 				CONVERSATION:
 				${transcript}
@@ -115,7 +137,6 @@ export const agenticHandler = (infra: Infra) => async (
 				No additional formatting. Just the next message.
 			`
 		});
-
 		await infra.sendControlMessage(room, { type: 'end' }, mid);
 	} catch (error) {
 		console.error('=== LLM Error ===');
