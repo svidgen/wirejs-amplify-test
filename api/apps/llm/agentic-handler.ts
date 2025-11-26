@@ -12,6 +12,18 @@ const assignConversationName = async (infra: Infra, conversationId: string, mess
 	await infra.updateConversationName(conversationId, name);
 }
 
+const tools = standard;
+const hasTools = Object.keys(tools).length > 0;
+
+function findInstruction(response: string) {
+	for (const rawLine of response.split("\n")) {
+		const line = rawLine.trim();
+		if (line.toLowerCase().startsWith('yes:')) {
+			return line.substring('yes:'.length);
+		}
+	}
+}
+
 export const agenticHandler = (infra: Infra) => async (
 	room: string,
 	newUserMessage: string
@@ -27,12 +39,12 @@ export const agenticHandler = (infra: Infra) => async (
 
 		// context blocks for sub-agents
 		const transcript = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join('\n')
-		const toolDescriptions = Object.entries(standard)
+		const toolDescriptions = Object.entries(tools)
 			.map(([name, def]) => `### ${name}:\n${def.description}`)
-			.join('\n---\n\n');
-		const toolUsages = Object.entries(standard)
-			.map(([name, def]) => `- ${JSON.stringify([name, ...def.arguments])}`)
-			.join('\n');
+			.join('\n\n---\n\n');
+		const toolUsages = Object.entries(tools)
+			.map(([name, def]) => `### ${name}\n\nARGUMENTS:\n\n${def}`)
+			.join('\n\n---\n\n');
 
 		// if we're just getting started, we want a user friendly conversation title.
 		if (mid === 1) {
@@ -41,68 +53,73 @@ export const agenticHandler = (infra: Infra) => async (
 
 		// AGENTIC LOOP
 		let maxIterations = 3;
-		let steps: string[] = [];
 
 		// TODO: restore existing context
 		const context: Record<string, string> = {};
 		do {
+			if (!hasTools) break;
 			await infra.sendControlMessage(room, {
 				type: 'status',
 				status: "Planning ..."
 			});
-			const nextSteps = await infra.assist({
+			const nextStepOutput = await infra.assist({
 				prompt: dedent`
-					Your job is to plan any next steps we should to do before responding to
-					USER as ASSISTANT using the available tools.
+					Hi. I need you to analyze a conversation. Review the following:
 
-					## AVAILABLE TOOLS:
-					${toolDescriptions}
+					1. Conversation
+					2. Completed actions
+					3. Available actions
 
-					## ALREADY COMPLETE STEPS (\`Record<string, string>\`):
-					${JSON.stringify(context, null, 2)}
+					THEN complete your assigned task.
 
 					## CONVERSATION:
 					${transcript}
 
-					## GUIDANCE:
-					- Each step must be high level instructions for a subordinate agent.
-					- Each step must refer to one specific AVAILABLE TOOL.
-					- The subordinate agent will manage tool invocation and result interpretation.
-					- Refer to the individual guidance on each tool entry.
-					- Your response must be JSON array of strings ONLY. (Type \`string[]\`.)
-					- Do NOT return any additional formatting, spacing, etc..
-					- If there are not relevant subtasks, return an empty array (\`[]\`).
+					## EXISTING CONTEXT:
+					${JSON.stringify(context, null, 2)}
 
-					## YOUR TASK:
-					Write the JSON array of steps.
+					## AVAILABLE ACTIONS:
+					${toolDescriptions}
+
+					# YOUR TASK:
+					Tell me if the transcript strongly warrants the use of any of the previously
+					listed AVAILABLE ACTIONS. If so, please respond with "YES: use ACTION_NAME
+					with parameters X... to do Y". Start your decision line with "YES:" and be
+					sure to include the tool name directly.
+
+					Otherwise, you can conclude with something like "NO: no actions are needed".
+					
+					Feel free to think aloud.
 				`
 			});
 			try {
-				steps = JSON.parse(nextSteps.content.trim());
-				console.log('steps', steps);
-				for (const step of steps) {
-					await infra.sendControlMessage(room, {
-						type: 'status',
-						status: `Working on ${step.substring(0, 20)} ...`
-					});
-					const args = JSON.parse((await infra.assist({
-						prompt: formatToolArguments(toolUsages, step)
-					})).content) as string[];
-					const toolResult = await standard[args[0]].execute(...args.slice(1));
+				const thinking = nextStepOutput.content.trim();
+				const step = findInstruction(thinking);
+				console.log({ thinking, step });
 
-					// NOTE! Here's where we potentially need chunked processing.
-					const processedResult = (await infra.assist({
-						prompt: processToolResults(toolResult, step)
-					})).content;
+				if (!step) break;
 
-					context[step] = processedResult;
+				await infra.sendControlMessage(room, {
+					type: 'status',
+					status: `Working on ${step.substring(0, 20)} ...`
+				});
+				const args = JSON.parse((await infra.assist({
+					prompt: formatToolArguments(toolUsages, step)
+				})).content) as string[];
+				const toolResult = await standard[args[0]].execute(...args.slice(1));
 
-					// TODO: save existing context
-				}
+				// NOTE! Here's where we potentially need chunked processing.
+				const processedResult = (await infra.assist({
+					prompt: processToolResults(toolResult, step)
+				})).content;
+
+				context[step] = processedResult;
+
+				// TODO: save existing context
 			} catch {
 				// meh
 			}
-		} while (steps.length > 0 && --maxIterations > 0);
+		} while (--maxIterations > 0);
 
 		console.log('final context', context);
 

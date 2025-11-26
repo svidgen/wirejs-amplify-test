@@ -33,7 +33,7 @@ export type ConversationMessage = {
 
 export type ToolDefinition = {
 	description: string;
-	arguments: string[];
+	arguments: string;
 	execute: (...args: any) => Promise<any>
 };
 

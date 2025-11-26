@@ -4,19 +4,17 @@ import type { ToolDefinitions } from "./types.js";
 export const standard: ToolDefinitions = {
 	webFetch: {
 		description: dedent`
-			Fetches and analyzes web content. Use when:
-			1. User asks about specific websites/URLs
-			2. User wants latest/recent news or information
-			3. Topic changes frequently and your knowledge may be outdated
-			4. Conversation critically requires accurate current data
-			5. User needs information you would not have from training
-			6. User explicitly requests external/web content.
+			Fetches web content from a URL.
 		`,
-		arguments: ['url: string'],
+		arguments: dedent`
+			1. URL: string
+		`,
 		async execute(url: string) {
 			console.log(`[webFetch] Starting comprehensive analysis for: ${url}`);
 
 			try {
+				const parsedUrl = new URL(url);
+
 				// Use the same fetch logic as httpGet but optimized for analysis
 				const controller = new AbortController();
 				const timeoutId = setTimeout(() => {
@@ -25,7 +23,7 @@ export const standard: ToolDefinitions = {
 				}, 20000); // 20 second timeout for analysis
 
 				console.log(`[webFetch] Fetching content from: ${url}`);
-				const request = await fetch(url, {
+				const request = await fetch(parsedUrl, {
 					signal: controller.signal,
 					headers: {
 						'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Analyzer/1.0)',
