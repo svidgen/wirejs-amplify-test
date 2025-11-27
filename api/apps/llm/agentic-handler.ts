@@ -1,6 +1,13 @@
 import { Infra } from './infra.js'
 import { cleanTitle, dedent } from './utils.js';
-import { generateConversationTitle, formatToolArguments, processToolResults } from './prompts.js';
+import {
+	generateConversationTitle,
+	generateNextMessagePrompt,
+	planningPrompt,
+	processToolResults,
+	toolDecisionPrompt,
+	toolArgsFix,
+} from './prompts.js';
 import { standard } from './tools.js';
 
 const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
@@ -15,20 +22,48 @@ const assignConversationName = async (infra: Infra, conversationId: string, mess
 const tools = standard;
 const hasTools = Object.keys(tools).length > 0;
 
-function findInstruction(response: string) {
-	for (const rawLine of response.split("\n")) {
-		const line = rawLine.trim();
-		if (line.toLowerCase().startsWith('act:')) {
-			return line.substring('act:'.length);
-		}
-	}
-}
+async function handleToolCalling(
+	infra: Infra,
+	room: string,
+	context: Record<string, string>,
+	analysis: string,
+	toolDescriptions: string,
+) {
+	let maxAttempts = 3;
+	const toolDecision = (await infra.assist({
+		prompt: toolDecisionPrompt(analysis, toolDescriptions)
+	})).content;
+	console.log({ toolDecision });
+	const args = JSON.parse(toolDecision);
+	while (maxAttempts-- >= 0) {
+		try {
+			console.log(args);
 
-function findGuidance(response: string) {
-	for (const rawLine of response.split("\n")) {
-		const line = rawLine.trim();
-		if (line.toLowerCase().startsWith('hint:')) {
-			return line.substring('hint:'.length);
+			const key = JSON.stringify([args.tool_name, args.args]);
+
+			if (args.should_call_tool && standard[args.tool_name]) {
+				await infra.sendControlMessage(room, {
+					type: 'status',
+					status: `Working ...`
+				});
+
+				const toolResult = await standard[args.tool_name].execute(...args.args);
+				// NOTE! Here's where we potentially need chunked processing.
+
+				const processedResult = (await infra.assist({
+					prompt: processToolResults(toolResult, key)
+				})).content;
+
+				context[key] = processedResult;
+
+				return true;
+			} else {
+				return false;
+			}
+		} catch (error: any) {
+			args.args = JSON.parse((await infra.assist({
+				prompt: toolArgsFix(toolDecision, String(error))
+			})).content);
 		}
 	}
 }
@@ -69,107 +104,16 @@ export const agenticHandler = (infra: Infra) => async (
 			if (!hasTools) break;
 			await infra.sendControlMessage(room, {
 				type: 'status',
-				status: "Planning ..."
+				status: "Thinking ..."
 			});
 			const nextStepOutput = await infra.assist({
-				prompt: dedent`
-					Your job is analyze a transcript between USER and ASSISTANT. I will provide
-					existing context, available actions, and the conversation transcript.
-
-					## EXISTING CONTEXT:
-					${JSON.stringify(context, null, 2)}
-
-					## AVAILABLE ACTIONS:
-					${toolDescriptions}
-
-					## CONVERSATION TRANSCRIPT:
-					${transcript}
-					
-					Write a brief analysis using this template, limited to 150 words.
-
-					I have analyzed the transcript and considered existing context and the
-					available tools. Here are my findings.
-
-					Summary of Existing Context: ___
-					Summary of Transcript: ___
-					Potentially Relevant Actions: ___
-					Because ___, I recommend that ASSISTANT
-					(respond in character knowing ___ | perform ___ with ___ in order to ___).
-				`
+				prompt: planningPrompt(context, toolDescriptions, transcript)
 			});
-			try {
-				const analysis = nextStepOutput.content.trim();
-
-				console.log({ analysis });
-
-				const toolDecision = (await infra.assist({
-					prompt: dedent`
-						Your job is to review an analysis and definitively determine whether a
-						tool call is called for.
-
-						## Analysis
-						${analysis}
-
-						## Available Tools
-						${toolDescriptions}
-
-						## Your Job
-						Determine whether the analysis definitively indicates the use of one of
-						tools from the directory of available tools.
-						
-						If a tool is indicated and appropriate, respond with this template:
-
-						{
-							"should_call_tool": true,
-							"tool_name": "___",
-							"args": [___, ...],
-							"reason": ___
-						}
-
-						Otherwise, use this template:
-
-						{
-							"should_call_tool": false
-						}
-
-						Respond ONLY with the JSON template and nothing else.
-					`
-				})).content;
-
-				console.log({ toolDecision });
-
-				// const args = JSON.parse((await infra.assist({
-				// 	prompt: formatToolArguments(toolDescriptions, analysis)
-				// })).content) as string[];
-
-				const args = JSON.parse(toolDecision);
-				console.log(args);
-
-				const key = JSON.stringify([args.tool_name, args.args]);
-
-				if (args.should_call_tool && standard[args.tool_name]) {
-					await infra.sendControlMessage(room, {
-						type: 'status',
-						status: `Working ...`
-					});
-
-					// const toolResult = await standard[args[0]].execute(...args.slice(1));
-					const toolResult = await standard[args.tool_name].execute(...args.args);
-
-					// NOTE! Here's where we potentially need chunked processing.
-					const processedResult = (await infra.assist({
-						prompt: processToolResults(toolResult, key)
-					})).content;
-
-					context[key] = processedResult;
-				} else {
-					maxIterations = 0;
-				}
-
-				// TODO: save existing context
-			} catch {
-				// meh
-			}
+			const analysis = nextStepOutput.content.trim();
+			console.log({ analysis });
+			const toolCalled = await handleToolCalling(infra, room, context, analysis, toolDescriptions);
+			if (!toolCalled) break;
+			// TODO: save existing context
 		} while (--maxIterations > 0);
 
 		console.log('final context', context);
@@ -182,31 +126,7 @@ export const agenticHandler = (infra: Infra) => async (
 		await infra.respond({
 			conversationId: room,
 			mid,
-			prompt: dedent`
-				Your job is to generate the NEXT ASSISTANT message to send to USER.
-				You are NOT speaking to me. I'm just a proxy!
-				You are writing a reply that will be sent directly to the user.
-
-				Do NOT mention the prepared context directly. Use it only for your reference.
-				It is output prepared by a preprocessing agent.
-
-				If the context is highly unusual or controversial and is relevant to your
-				response, present it neutrally and without endorsing it.
-
-				PREPARED CONTEXT:
-				${JSON.stringify(context, null, 2)}
-
-				PREPARED GUIDANCE:
-				${guidance}
-
-				CONVERSATION:
-				${transcript}
-
-				TASK:
-				Generate ASSISTANT's next message to the user.
-				Keep it friendly. Output only the message text.
-				No additional formatting. Just the next message.
-			`
+			prompt: generateNextMessagePrompt(context, guidance, transcript);
 		});
 		await infra.sendControlMessage(room, { type: 'end' }, mid);
 	} catch (error) {
