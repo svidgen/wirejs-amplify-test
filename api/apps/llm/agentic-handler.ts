@@ -63,7 +63,7 @@ export const agenticHandler = (infra: Infra) => async (
 		// TODO: restore existing context
 		const context: Record<string, string> = {};
 
-		let analysis = 'Respond normally.'
+		let guidance = 'Respond normally.'
 
 		do {
 			if (!hasTools) break;
@@ -75,7 +75,6 @@ export const agenticHandler = (infra: Infra) => async (
 				prompt: dedent`
 					Your job is analyze a transcript between USER and ASSISTANT. I will provide
 					existing context, available actions, and the conversation transcript.
-					You must tell me whether any of the AVAILABLE ACTIONS is warranted.
 
 					## EXISTING CONTEXT:
 					${JSON.stringify(context, null, 2)}
@@ -86,39 +85,76 @@ export const agenticHandler = (infra: Infra) => async (
 					## CONVERSATION TRANSCRIPT:
 					${transcript}
 					
-					Write a brief analysis using this template:
+					Write a brief analysis using this template, limited to 150 words.
 
 					I have analyzed the transcript and considered existing context and the
-					available tools. Here is my analysis:
+					available tools. Here are my findings.
 
-					Summary of Context: ___
+					Summary of Existing Context: ___
 					Summary of Transcript: ___
 					Potentially Relevant Actions: ___
-					In conclusion, because ___, the most natural next step for ASSISTANT would be
-					to (respond in character | use action ___ with arguments ___).
-					In order to do this, ASSISTANT might need to know ___.
+					Because ___, I recommend that ASSISTANT
+					(respond in character knowing ___ | perform ___ with ___ in order to ___).
 				`
 			});
 			try {
-				analysis = nextStepOutput.content.trim();
-				// const step = findInstruction(thinking);
-				// const guidance = findGuidance(thinking);
+				const analysis = nextStepOutput.content.trim();
 
 				console.log({ analysis });
 
-				const args = JSON.parse((await infra.assist({
-					prompt: formatToolArguments(toolDescriptions, analysis)
-				})).content) as string[];
+				const toolDecision = (await infra.assist({
+					prompt: dedent`
+						Your job is to review an analysis and definitively determine whether a
+						tool call is called for.
 
-				const key = JSON.stringify(args);
+						## Analysis
+						${analysis}
 
-				if (standard[args[0]]) {
+						## Available Tools
+						${toolDescriptions}
+
+						## Your Job
+						Determine whether the analysis definitively indicates the use of one of
+						tools from the directory of available tools.
+						
+						If a tool is indicated and appropriate, respond with this template:
+
+						{
+							"should_call_tool": true,
+							"tool_name": "___",
+							"args": [___, ...],
+							"reason": ___
+						}
+
+						Otherwise, use this template:
+
+						{
+							"should_call_tool": false
+						}
+
+						Respond ONLY with the JSON template and nothing else.
+					`
+				})).content;
+
+				console.log({ toolDecision });
+
+				// const args = JSON.parse((await infra.assist({
+				// 	prompt: formatToolArguments(toolDescriptions, analysis)
+				// })).content) as string[];
+
+				const args = JSON.parse(toolDecision);
+				console.log(args);
+
+				const key = JSON.stringify([args.tool_name, args.args]);
+
+				if (args.should_call_tool && standard[args.tool_name]) {
 					await infra.sendControlMessage(room, {
 						type: 'status',
 						status: `Working ...`
 					});
 
-					const toolResult = await standard[args[0]].execute(...args.slice(1));
+					// const toolResult = await standard[args[0]].execute(...args.slice(1));
+					const toolResult = await standard[args.tool_name].execute(...args.args);
 
 					// NOTE! Here's where we potentially need chunked processing.
 					const processedResult = (await infra.assist({
@@ -160,8 +196,8 @@ export const agenticHandler = (infra: Infra) => async (
 				PREPARED CONTEXT:
 				${JSON.stringify(context, null, 2)}
 
-				PREPARED ANALYSIS:
-				${analysis}
+				PREPARED GUIDANCE:
+				${guidance}
 
 				CONVERSATION:
 				${transcript}

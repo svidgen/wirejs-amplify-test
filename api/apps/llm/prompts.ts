@@ -1,33 +1,44 @@
 import { dedent } from "./utils.js";
 import type { ToolDefinitions } from "./types.js";
 
-export const formatToolArguments = (tools: string, instructions: string) => dedent`
-	I need you to review an analysis. Your job is to:
+export const formatToolArguments = (tools: string, analysis: string) => dedent`
+	You are a strict JSON output generator.
 
-	1. Examine the analysis
-	2. Return a JSON array
+	Input:
+	- Available tool definitions
+	- An "Analysis" that MAY include a suggestion to call a specific tool.
 
-	If the analysis indicates the need for a specific action:
-	1. Extract the exact arguments needed for the specified tool
-	2. Return ONLY a JSON array of arguments, nothing else
-	3. First argument is the name of the tool
+	Your job:
+	1. Determine IF a tool call is explicitly required.
+	2. If yes:
+		- Identify the tool name EXACTLY as it appears in AVAILABLE TOOLS
+		- Extract ONLY the required arguments
+		- Convert them into **string primitives**
+	3. Output a single JSON array:
+		- Element 0: the tool name (string)
+		- Remaining elements: argument values (strings)
+	4. If NO tool call is needed:
+		- Return: []
 
-	Examples:
-	- "get the content from https://example.com using the webFetch tool" -> ["webFetch", "https://example.com"]
-	- "fetch data from api.weather.com/current for calculate tool" -> ["calculate", "1 + 2"]
-
-	These are just examples. The real list of available tools is here:
+	IMPORTANT RULES:
+	- URLs must be valid HTTP(S) strings.
+	- Convert objects, numbers, or other forms into strings.
+	- Do NOT invent or guess missing arguments.
+	- Do NOT wrap the output in quotes, code blocks, or explanation.
 
 	AVAILABLE TOOLS:
+
 	${tools}
 
 	ANALYSIS:
-	${instructions}
+	${analysis}
 
-	If no tool call is needed, respond with an empty array.
+	VALID OUTPUTS:
+	[]
+	["toolName", "argument"]
+	["toolName", "arg1", "arg2"]
 
-	YOUR TASK:
-	Return ONLY the raw JSON array. Do NOT wrap it in markdown code blocks or backticks. Do NOT add any explanations.
+	Now output ONLY the JSON array.
 `;
 
 export const processToolResults = (results: string, instructions: string) => dedent`
