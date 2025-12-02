@@ -30,13 +30,16 @@ async function handleToolCalling(
 	toolDescriptions: string,
 ) {
 	let maxAttempts = 3;
-	const toolDecision = (await infra.assist({
-		prompt: toolDecisionPrompt(analysis, toolDescriptions)
-	})).content;
-	console.log({ toolDecision });
-	const args = JSON.parse(toolDecision);
+	let args: any;
+	let toolDecision: string = '';
 	while (maxAttempts-- >= 0) {
 		try {
+			toolDecision = (await infra.assist({
+				prompt: toolDecisionPrompt(analysis, toolDescriptions)
+			})).content;
+			console.log({ toolDecision });
+			args = JSON.parse(toolDecision);
+
 			console.log(args);
 
 			const key = JSON.stringify([args.tool_name, args.args]);
@@ -126,7 +129,7 @@ export const agenticHandler = (infra: Infra) => async (
 		await infra.respond({
 			conversationId: room,
 			mid,
-			prompt: generateNextMessagePrompt(context, guidance, transcript);
+			prompt: generateNextMessagePrompt(context, guidance, transcript)
 		});
 		await infra.sendControlMessage(room, { type: 'end' }, mid);
 	} catch (error) {

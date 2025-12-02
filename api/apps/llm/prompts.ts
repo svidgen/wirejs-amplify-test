@@ -127,28 +127,21 @@ export const planningPrompt =  (
 	## CONVERSATION TRANSCRIPT:
 	${transcript}
 	
-	Write a brief analysis using this template, limited to 200 words.
+	Write a very brief analysis using this template, no more than 100 words.
 
-	I have analyzed the transcript and considered existing context and the
-	available tools. Here is my analysis.
-
-	Summary of Existing Context: ___
-	Summary of Transcript: ___
-	Specific Actions Might Help: ___
-	Reasons the Action Would NOT Help: ___
-	Ultimately, the USER Wants: ___
-	Therefore, between these two options:
+	The USER wants and/or needs: ___
+	The two valid options:
 		- RESPOND: Respond in character knowing ___
 		- ACT: Perform ___ with arguments ___ in order to ___
-	I advise [ RESPOND | ACT ].
+	The most fitting option is to [ RESPOND | ACT ].
 `;
 
 export const toolDecisionPrompt = (
 	analysis: string,
 	toolDescriptions: string,
 ) => dedent`
-	Your job is to review an analysis and definitively determine whether a
-	tool call is called for.
+	Your job is to review an analysis and definitively determine whether an
+	action (tool call) is indicated.
 
 	## Analysis
 	${analysis}
@@ -166,7 +159,7 @@ export const toolDecisionPrompt = (
 		"should_call_tool": true,
 		"tool_name": "___",
 		"args": [___, ...],
-		"reason": ___
+		"reason": "___"
 	}
 
 	Otherwise, use this template:
@@ -175,24 +168,24 @@ export const toolDecisionPrompt = (
 		"should_call_tool": false
 	}
 
-	Respond ONLY with the JSON template and nothing else.
+	Respond ONLY with valid JSON in the template form and nothing else.
 `;
 
 export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 	Your job is to review the error resulting from a previous attempted tool invocation
 	and determine if the arguments were incorrect.
 
-	## Previous Tool Decision
+	## Previous Tool Invocation
 	${toolDecision}
 
 	## Resulting Error
 	${error}
 
-	Return a new argument array as JSON. I.e.,
+	Return a new argument array ("args" property) as JSON. I.e.,
 
 	["arg1", "arg2", ...]
 
-	Respond ONLY with the JSON template and nothing else.
+	Respond ONLY with the new JSON "args" property array and nothing else.
 `;
 
 export const generateNextMessagePrompt = (
@@ -201,14 +194,14 @@ export const generateNextMessagePrompt = (
 	transcript: string
 ) => dedent`
 	Your job is to generate the NEXT ASSISTANT message to send to USER.
-	You are NOT speaking to me. I'm just a proxy!
+	You are NOT speaking to me. You are responding via me to USER. I'm just a proxy!
 	You are writing a reply that will be sent directly to the user.
 
 	Do NOT mention the prepared context directly. Use it only for your reference.
 	It is output prepared by a preprocessing agent.
 
 	If the context is highly unusual or controversial and is relevant to your
-	response, present it neutrally and without endorsing it.
+	response, just present it neutrally and without endorsing it.
 
 	PREPARED CONTEXT:
 	${JSON.stringify(context, null, 2)}
@@ -221,6 +214,6 @@ export const generateNextMessagePrompt = (
 
 	TASK:
 	Generate ASSISTANT's next message to the user.
-	Keep it friendly. Output only the message text.
+	Respond as you normally would. Output only the message text.
 	No additional formatting. Just the next message.
 `;

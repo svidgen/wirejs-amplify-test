@@ -44,9 +44,12 @@ export const standard: ToolDefinitions = {
 				return body;
 
 			} catch (error) {
-				console.error(`[webFetch] Error analyzing ${url}:`, error);
+				console.error(`[webFetch] Error fetching ${url}:`, error);
 				if (error instanceof Error && error.name === 'AbortError') {
 					throw new Error(`Analysis timeout after 20 seconds for: ${url}`);
+				}
+				if (error instanceof Error && error.name === 'TypeError') {
+					throw new Error(`Invalid URL argument: "${url}"`);
 				}
 				throw error;
 			}
