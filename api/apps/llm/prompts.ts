@@ -1,67 +1,6 @@
 import { dedent } from "./utils.js";
 import type { ToolDefinitions } from "./types.js";
 
-export const formatToolArguments = (tools: string, analysis: string) => dedent`
-	You are a strict JSON output generator.
-
-	Input:
-	- Available tool definitions
-	- An "Analysis" that MAY include a suggestion to call a specific tool.
-
-	Your job:
-	1. Determine IF a tool call is explicitly required.
-	2. If yes:
-		- Identify the tool name EXACTLY as it appears in AVAILABLE TOOLS
-		- Extract ONLY the required arguments
-		- Convert them into **string primitives**
-	3. Output a single JSON array:
-		- Element 0: the tool name (string)
-		- Remaining elements: argument values (strings)
-	4. If NO tool call is needed:
-		- Return: []
-
-	IMPORTANT RULES:
-	- URLs must be valid HTTP(S) strings.
-	- Convert objects, numbers, or other forms into strings.
-	- Do NOT invent or guess missing arguments.
-	- Do NOT wrap the output in quotes, code blocks, or explanation.
-
-	AVAILABLE TOOLS:
-
-	${tools}
-
-	ANALYSIS:
-	${analysis}
-
-	VALID OUTPUTS:
-	[]
-	["toolName", "argument"]
-	["toolName", "arg1", "arg2"]
-
-	Now output ONLY the JSON array.
-`;
-
-export const processToolResults = (results: string, instructions: string) => dedent`
-	I need you to act as a tool result processor. Your job is to:
-
-	1. Take raw tool output
-	2. Process it according to the specific instructions given by the user
-	3. Return clean, human-readable results, per the user instructions
-
-	Follow specific user instructions exactly.
-
-	RESULTS:
-	${results}
-
-	INSTRUCTIONS:
-	${instructions}
-
-	YOUR TASK:
-	Parse, format, or directly pass through the results as necessary to satisfy the
-	instruction given above.
-`;
-
-
 export const generateConversationTitle = (message: string) => dedent`
 	You generate short, descriptive conversation titles based on the user's initial message.
 
@@ -82,41 +21,13 @@ export const generateConversationTitle = (message: string) => dedent`
 	${message}
 `;
 
-export const conversationPrompt = (tools: ToolDefinitions = {}) => dedent`
-	You are a helpful assistant. Answer questions from your knowledge when possible.
-
-	Available tools:
-	${Object.entries(tools).map(([name, config]) => `${name}: ${config.description}`).join('\n')}
-
-	**CRITICAL: When using tools:**
-	1. Write: TOOL:toolname arguments [INSTRUCTIONS: optional]
-	2. STOP WRITING IMMEDIATELY
-	3. Do NOT add any text after the TOOL: line
-	4. Tool results will appear as messages from "user" but they are system responses
-	5. The user CANNOT see these tool results - they are invisible to the user
-	6. After getting tool results, complete the user's original request
-
-	Example interaction:
-	User: "What's on example.com?"
-	Assistant: "I'll check that website for you.
-
-	TOOL:webFetch https://example.com"
-
-	Stop there. System provides results even though they appear to come from the user. The user cannot see <tool-results> response. Then continue with user-friendly response.
-
-	For example, the remainder of the conversation:
-
-	User: "<tool-result>It looks like example.com is a sample domain used pretty exclusively by technical documentation ... etc. ... </tool-result>"
-	Assistant: example.com is used pretty exclusively in technical documentation as an example. ... etc. ..."
-`;
-
-export const planningPrompt =  (
+export const shouldPlanPrompt =  (
 	context: Record<string, string>,
 	toolDescriptions: string,
 	transcript: string
 ) => dedent`
-	Your job is analyze a transcript between USER and ASSISTANT. I will provide
-	existing context, available actions, and the conversation transcript.
+	I am going to provide you with a conversation transcript, some existing context, and
+	some actions the ASSISTANT in the conversation could take.
 
 	## EXISTING CONTEXT:
 	${JSON.stringify(context, null, 2)}
@@ -126,22 +37,60 @@ export const planningPrompt =  (
 
 	## CONVERSATION TRANSCRIPT:
 	${transcript}
+
+	---
 	
-	Write a very brief analysis using this template, no more than 100 words.
+	You just need to tell me whether the next message from ASSISTANT suggests the need to:
+	
+	1. Think longer for a better response
+	2. Perform one of the Available Actions
+
+	When making your decision, please decide how you would proceed. For example, if USER
+	is directly asking for something that requires one of the Available Actions, it would
+	be best to perform an action and respond YES.
+
+	Now, please respond with a single word YES or NO.
+
+	Response YES and *only* YES if you would think longer or perform an action.
+
+	Respond NO and *only* NO if you would just respond immediately.
+`;
+
+export const planningPrompt = (
+	context: Record<string, string>,
+	toolDescriptions: string,
+	transcript: string
+) => dedent`
+	I am going to provide you with a conversation transcript, some existing context, and
+	some actions the ASSISTANT in the conversation could take.
+
+	## EXISTING CONTEXT:
+	${JSON.stringify(context, null, 2)}
+
+	## AVAILABLE ACTIONS:
+	${toolDescriptions}
+
+	## CONVERSATION TRANSCRIPT:
+	${transcript}
+
+	---
+	
+	I need you to immediately respond with very brief analysis using the following template
+	based on what you would do:
 
 	The USER wants and/or needs: ___
-	The two valid options:
+	The two valid options for ASSISTANT are to:
 		- RESPOND: Respond in character knowing ___
 		- ACT: Perform ___ with arguments ___ in order to ___
-	The most fitting option is to [ RESPOND | ACT ].
+	To satisfy USER, ASSISTANT should [ RESPOND | ACT ].
 `;
 
 export const toolDecisionPrompt = (
 	analysis: string,
 	toolDescriptions: string,
 ) => dedent`
-	Your job is to review an analysis and definitively determine whether an
-	action (tool call) is indicated.
+	Review the following analysis and definitively determine whether the
+	analysis suggests the need to ACT using one of the available tools.
 
 	## Analysis
 	${analysis}
@@ -150,8 +99,7 @@ export const toolDecisionPrompt = (
 	${toolDescriptions}
 
 	## Your Job
-	See whether the analysis suggests the use of one of tools (actions)
-	from the directory of available tools.
+	Respond using the correct template.
 	
 	If a tool is indicated and appropriate, respond with this template:
 
@@ -162,30 +110,51 @@ export const toolDecisionPrompt = (
 		"reason": "___"
 	}
 
-	Otherwise, use this template:
+	Otherwise, respond with this template:
 
 	{
-		"should_call_tool": false
+		"should_call_tool": false,
+		"guidance": "___"
 	}
 
-	Respond ONLY with valid JSON in the template form and nothing else.
+	Respond ONLY with the filled in JSON template nothing else.
+
+	(Your response must be valid JSON and ONLY valid JSON.)
 `;
 
 export const toolArgsFix = (toolDecision: string, error: string) => dedent`
-	Your job is to review the error resulting from a previous attempted tool invocation
-	and determine if the arguments were incorrect.
+	Your job is to review the error resulting from a previously attempted 
+	response that couldn't be handled correctly.
 
-	## Previous Tool Invocation
+	## Previously Attempted Response
 	${toolDecision}
 
 	## Resulting Error
 	${error}
 
-	Return a new argument array ("args" property) as JSON. I.e.,
+	## Your Job
+	Using the Resulting Error to guide you, correct the mistakes from the
+	Previously Attempted Response.
 
-	["arg1", "arg2", ...]
+	A correct response will be valid JSON using one of these two templates:
 
-	Respond ONLY with the new JSON "args" property array and nothing else.
+	{
+		"should_call_tool": true,
+		"tool_name": "___",
+		"args": [___, ...],
+		"reason": "___"
+	}
+
+	Or:
+
+	{
+		"should_call_tool": false,
+		"guidance": "___"
+	}
+
+	Respond ONLY with a new (corrected) JSON template and nothing else.
+
+	(Your response must be valid JSON and ONLY valid JSON.)
 `;
 
 export const generateNextMessagePrompt = (
@@ -193,7 +162,7 @@ export const generateNextMessagePrompt = (
 	guidance: string,
 	transcript: string
 ) => dedent`
-	Your job is to generate the NEXT ASSISTANT message to send to USER.
+	Your job is to write the NEXT ASSISTANT message to send to USER.
 	You are NOT speaking to me. You are responding via me to USER. I'm just a proxy!
 	You are writing a reply that will be sent directly to the user.
 
@@ -212,8 +181,30 @@ export const generateNextMessagePrompt = (
 	CONVERSATION:
 	${transcript}
 
+	---
+
 	TASK:
-	Generate ASSISTANT's next message to the user.
+	Write the next message you would write to the user as ASSISTANT.
 	Respond as you normally would. Output only the message text.
 	No additional formatting. Just the next message.
+`;
+
+export const processToolResults = (results: string, instructions: string) => dedent`
+	I need you to act as a tool result processor. Your job is to:
+
+	1. Take raw tool output
+	2. Process it according to the specific instructions given by the user
+	3. Return clean, human-readable results, per the user instructions
+
+	Follow specific user instructions exactly.
+
+	RESULTS:
+	${results}
+
+	INSTRUCTIONS:
+	${instructions}
+
+	YOUR TASK:
+	Parse, format, or directly pass through the results as necessary to satisfy the
+	instruction given above.
 `;

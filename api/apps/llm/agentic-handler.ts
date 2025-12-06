@@ -1,5 +1,5 @@
 import { Infra } from './infra.js'
-import { cleanTitle, dedent } from './utils.js';
+import { cleanTitle } from './utils.js';
 import {
 	generateConversationTitle,
 	generateNextMessagePrompt,
@@ -7,6 +7,7 @@ import {
 	processToolResults,
 	toolDecisionPrompt,
 	toolArgsFix,
+	shouldPlanPrompt,
 } from './prompts.js';
 import { standard } from './tools.js';
 
@@ -29,7 +30,7 @@ async function handleToolCalling(
 	analysis: string,
 	toolDescriptions: string,
 ) {
-	let maxAttempts = 3;
+	let maxAttempts = 5;
 	let args: any;
 	let toolDecision: string = '';
 	while (maxAttempts-- >= 0) {
@@ -64,7 +65,7 @@ async function handleToolCalling(
 				return false;
 			}
 		} catch (error: any) {
-			args.args = JSON.parse((await infra.assist({
+			args = JSON.parse((await infra.assist({
 				prompt: toolArgsFix(toolDecision, String(error))
 			})).content);
 		}
@@ -91,8 +92,9 @@ export const agenticHandler = (infra: Infra) => async (
 		const toolDescriptions = JSON.stringify(tools);
 
 		// if we're just getting started, we want a user friendly conversation title.
+		let titlePromise: Promise<any> | undefined = undefined;
 		if (mid === 1) {
-			await assignConversationName(infra, room, newUserMessage);
+			titlePromise = assignConversationName(infra, room, newUserMessage);
 		}
 
 		// AGENTIC LOOP
@@ -105,13 +107,25 @@ export const agenticHandler = (infra: Infra) => async (
 
 		do {
 			if (!hasTools) break;
+		
+			const requiresPlanningAnswer = await infra.assist({
+				prompt: shouldPlanPrompt(context, toolDescriptions, transcript)
+			});
+			console.log({ requiresPlanningAnswer });
+			const answer = requiresPlanningAnswer.content.toLocaleLowerCase();
+			if (!(answer.startsWith('yes') || answer.startsWith('"yes'))) {
+				break;
+			}
+			
 			await infra.sendControlMessage(room, {
 				type: 'status',
-				status: "Thinking ..."
+				status: "Thinking for a better answer ..."
 			});
+
 			const nextStepOutput = await infra.assist({
 				prompt: planningPrompt(context, toolDescriptions, transcript)
 			});
+
 			const analysis = nextStepOutput.content.trim();
 			console.log({ analysis });
 			const toolCalled = await handleToolCalling(infra, room, context, analysis, toolDescriptions);
@@ -132,6 +146,7 @@ export const agenticHandler = (infra: Infra) => async (
 			prompt: generateNextMessagePrompt(context, guidance, transcript)
 		});
 		await infra.sendControlMessage(room, { type: 'end' }, mid);
+		await titlePromise;
 	} catch (error) {
 		console.error('=== LLM Error ===');
 		console.error('LLM call failed:', error);
