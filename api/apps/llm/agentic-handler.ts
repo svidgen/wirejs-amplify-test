@@ -10,6 +10,7 @@ import {
 	shouldPlanPrompt,
 } from './prompts.js';
 import { standard } from './tools.js';
+import { LLMMessage } from 'wirejs-resources';
 
 const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
 	const titleResponse = await infra.assist({
@@ -30,14 +31,17 @@ async function handleToolCalling(
 	analysis: string,
 	toolDescriptions: string,
 ) {
-	let maxAttempts = 5;
+	let lastError: any = undefined;
+	let maxAttempts = 10;
 	let args: any;
-	let toolDecision: string = '';
+	let toolDecision: string = '{}';
 	while (maxAttempts-- >= 0) {
 		try {
-			toolDecision = (await infra.assist({
-				prompt: toolDecisionPrompt(analysis, toolDescriptions)
-			})).content;
+			toolDecision = (await (lastError ?
+				infra.assist({ prompt: toolArgsFix(toolDecision!, lastError.stack) }) :
+				infra.assist({ prompt: toolDecisionPrompt(analysis, toolDescriptions) })
+			)).content;
+
 			console.log({ toolDecision });
 			args = JSON.parse(toolDecision);
 
@@ -65,9 +69,7 @@ async function handleToolCalling(
 				return false;
 			}
 		} catch (error: any) {
-			args = JSON.parse((await infra.assist({
-				prompt: toolArgsFix(toolDecision, String(error))
-			})).content);
+			lastError = error;
 		}
 	}
 }

@@ -26,9 +26,6 @@ export const shouldPlanPrompt =  (
 	toolDescriptions: string,
 	transcript: string
 ) => dedent`
-	I am going to provide you with a conversation transcript, some existing context, and
-	some actions the ASSISTANT in the conversation could take.
-
 	## EXISTING CONTEXT:
 	${JSON.stringify(context, null, 2)}
 
@@ -39,21 +36,16 @@ export const shouldPlanPrompt =  (
 	${transcript}
 
 	---
-	
-	You just need to tell me whether the next message from ASSISTANT suggests the need to:
-	
-	1. Think longer for a better response
-	2. Perform one of the Available Actions
 
-	When making your decision, please decide how you would proceed. For example, if USER
-	is directly asking for something that requires one of the Available Actions, it would
-	be best to perform an action and respond YES.
+	- Does USER's last message suggest they want or need you to perform one of the actions?
+	- Is your own knowledge insufficient or potentially out of date enough to warrant performing an action?
+	- Is the topic complex enough to warrant some "thinking aloud" first?
+
+	If any of those are a "yes", respond YES and *only* YES.
+
+	Otherwise, respond NO and *only* NO.
 
 	Now, please respond with a single word YES or NO.
-
-	Response YES and *only* YES if you would think longer or perform an action.
-
-	Respond NO and *only* NO if you would just respond immediately.
 `;
 
 export const planningPrompt = (
@@ -61,9 +53,6 @@ export const planningPrompt = (
 	toolDescriptions: string,
 	transcript: string
 ) => dedent`
-	I am going to provide you with a conversation transcript, some existing context, and
-	some actions the ASSISTANT in the conversation could take.
-
 	## EXISTING CONTEXT:
 	${JSON.stringify(context, null, 2)}
 
@@ -73,10 +62,15 @@ export const planningPrompt = (
 	## CONVERSATION TRANSCRIPT:
 	${transcript}
 
+	## REQUIRES THINKING AND/OR ACTION:
+	YES
+
 	---
+
+	As you can see, a subordinate agent already decided that responding to USER warrants
+	some additional "thinking aloud" and/or the usage of one of the listed actions.
 	
-	I need you to immediately respond with very brief analysis using the following template
-	based on what you would do:
+	To ensure the best response to USER, please respond use this template:
 
 	The USER wants and/or needs: ___
 	The two valid options for ASSISTANT are to:
@@ -89,9 +83,6 @@ export const toolDecisionPrompt = (
 	analysis: string,
 	toolDescriptions: string,
 ) => dedent`
-	Review the following analysis and definitively determine whether the
-	analysis suggests the need to ACT using one of the available tools.
-
 	## Analysis
 	${analysis}
 
@@ -99,7 +90,8 @@ export const toolDecisionPrompt = (
 	${toolDescriptions}
 
 	## Your Job
-	Respond using the correct template.
+	Match the conclusions of the analysis with one of the Available Tools.
+	Then, respond using the correct template and ONLY with the correct template.
 	
 	If a tool is indicated and appropriate, respond with this template:
 
@@ -119,25 +111,27 @@ export const toolDecisionPrompt = (
 
 	Respond ONLY with the filled in JSON template nothing else.
 
-	(Your response must be valid JSON and ONLY valid JSON.)
+	(Your response must be fully valid JSON and ONLY fully valid JSON.)
 `;
 
 export const toolArgsFix = (toolDecision: string, error: string) => dedent`
-	Your job is to review the error resulting from a previously attempted 
-	response that couldn't be handled correctly.
+	An attempt to perform an action was made. However, something in the Previous Attempt
+	was formatted incorrectly, a data type was incorrect, or similar issue.
 
-	## Previously Attempted Response
+	## Previous Attempt
 	${toolDecision}
 
 	## Resulting Error
 	${error}
 
 	## Your Job
-	Using the Resulting Error to guide you, correct the mistakes from the
-	Previously Attempted Response.
+	Determine what is wrong with the Previous Attempt. Then, respond with the corrected
+	template and ONLY the corrected template.
 
-	A correct response will be valid JSON using one of these two templates:
+	A correct response will be valid JSON using one of these two templates.
 
+	When performing an action (calling a tool):
+	
 	{
 		"should_call_tool": true,
 		"tool_name": "___",
@@ -145,7 +139,7 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 		"reason": "___"
 	}
 
-	Or:
+	When responding normally with response guidance:
 
 	{
 		"should_call_tool": false,
@@ -154,7 +148,7 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 
 	Respond ONLY with a new (corrected) JSON template and nothing else.
 
-	(Your response must be valid JSON and ONLY valid JSON.)
+	(Your response must be fully valid JSON and ONLY fully valid JSON.)
 `;
 
 export const generateNextMessagePrompt = (
