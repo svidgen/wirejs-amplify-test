@@ -10,10 +10,12 @@ export const standard: ToolDefinitions = {
 			1. url: string
 		`,
 		async execute(url: string) {
-			console.log(`[webFetch] Starting comprehensive analysis for: ${url}`);
+			console.log(`[webFetch] Received webFetch request for: ${url}`);
 
 			try {
-				const parsedUrl = new URL(url);
+				const parsedUrl = new URL(
+					['http://', 'https://'].some(p => url.startsWith(p)) ? url : `https://${url}`
+				);
 
 				// Use the same fetch logic as httpGet but optimized for analysis
 				const controller = new AbortController();
@@ -38,7 +40,7 @@ export const standard: ToolDefinitions = {
 				}
 
 				const body = await request.text();
-				console.log(`[webFetch] Fetched ${body.length} characters for comprehensive analysis from: ${url}`);
+				console.log(`[webFetch] Fetched ${body.length} characters from: ${url}`);
 				
 				// Return raw content - chunking will be handled automatically by executeToolWithSubAgent
 				return body;
@@ -46,10 +48,7 @@ export const standard: ToolDefinitions = {
 			} catch (error) {
 				console.error(`[webFetch] Error fetching ${url}:`, error);
 				if (error instanceof Error && error.name === 'AbortError') {
-					throw new Error(`Analysis timeout after 20 seconds for: ${url}`);
-				}
-				if (error instanceof Error && error.name === 'TypeError') {
-					throw new Error(`Invalid URL argument: "${url}"`);
+					throw new Error(`Fetch timeout after 20 seconds for: ${url}`);
 				}
 				throw error;
 			}
