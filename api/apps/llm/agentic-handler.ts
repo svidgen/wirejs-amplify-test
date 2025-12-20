@@ -10,7 +10,6 @@ import {
 	shouldPlanPrompt,
 } from './prompts.js';
 import { standard } from './tools.js';
-import { LLMMessage } from 'wirejs-resources';
 
 const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
 	const titleResponse = await infra.assist({
@@ -52,7 +51,7 @@ async function handleToolCalling(
 			if (args.should_call_tool && standard[args.tool_name]) {
 				await infra.sendControlMessage(room, {
 					type: 'status',
-					status: `Working ...`
+					status: `⚒️ Working ...`
 				});
 
 				const toolResult = await standard[args.tool_name].execute(...args.args);
@@ -100,7 +99,7 @@ export const agenticHandler = (infra: Infra) => async (
 		}
 
 		// AGENTIC LOOP
-		let maxIterations = 3;
+		let maxIterations = 5;
 
 		// TODO: restore existing context
 		const context: Record<string, string> = {};
