@@ -42,7 +42,7 @@ class Message {
 		${node('body', md => html`<div>${md}</div>`)}
 	</div>`;
 
-	constructor(role: Role, body: string = '', isDone: boolean = true) {
+	constructor(role: Role, body: string = '', isDone: boolean = false) {
 		this.isDone = isDone;
 		this.role = role;
 		this.originalContent = body;
@@ -152,7 +152,7 @@ async function Chat() {
 				self.data.message.disabled = true;
 				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
-				self.data.messageStatus = '<i>Thinking ...</i>';
+				self.data.messageStatus = '📨 Sending ...';
 				self.autoscroll();
 				
 				// Send only the latest user message to the server
@@ -393,12 +393,12 @@ async function Chat() {
 					}
 
 					if (chunk.data.type === 'start') {
-						self.data.messageStatus = '💫 Thinking ...';
+						self.data.messageStatus = '👀 Reading ...';
 						return;
 					}
 
 					if (chunk.data.type === 'status') {
-						self.data.messageStatus = `💫 ${chunk.data.status}`;
+						self.data.messageStatus = `${chunk.data.status}`;
 						return;
 					}
 
@@ -414,11 +414,10 @@ async function Chat() {
 					message.appendChunk(chunk);
 
 					if (!message.isDone) {
-						self.data.messageStatus = '💫 Writing ...';
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else {
-						self.data.messageStatus = '';
+						self.data.messageStatus = '<span class="muted">✔️ Done responding.</span>';
 						self.data.submitButton.disabled = false;
 						self.data.message.disabled = false;
 						self.data.message.focus();

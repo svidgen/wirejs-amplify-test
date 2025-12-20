@@ -114,14 +114,14 @@ export const agenticHandler = (infra: Infra) => async (
 				prompt: shouldPlanPrompt(context, toolDescriptions, transcript)
 			});
 			console.log({ requiresPlanningAnswer });
-			const answer = requiresPlanningAnswer.content.toLocaleLowerCase();
+			const answer = requiresPlanningAnswer.content.trim().toLocaleLowerCase();
 			if (!(answer.startsWith('yes') || answer.startsWith('"yes'))) {
 				break;
 			}
 			
 			await infra.sendControlMessage(room, {
 				type: 'status',
-				status: "Thinking for a better answer ..."
+				status: "💫 Thinking for a better answer ..."
 			});
 
 			const nextStepOutput = await infra.assist({
@@ -140,15 +140,15 @@ export const agenticHandler = (infra: Infra) => async (
 		// FINAL AGENT RESPONSE
 		await infra.sendControlMessage(room, {
 			type: 'status',
-			status: `Writing ...`
-		})
+			status: `📝 Responding ...`
+		});
 		await infra.respond({
 			conversationId: room,
 			mid,
 			prompt: generateNextMessagePrompt(context, guidance, transcript)
 		});
-		await infra.sendControlMessage(room, { type: 'end' }, mid);
 		await titlePromise;
+		await infra.sendControlMessage(room, { type: 'end' }, mid);
 	} catch (error) {
 		console.error('=== LLM Error ===');
 		console.error('LLM call failed:', error);
