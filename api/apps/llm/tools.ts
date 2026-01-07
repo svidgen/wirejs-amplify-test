@@ -1,57 +1,73 @@
-import { dedent } from "./utils.js";
+import { dedent, extractContentFromHtml } from "./utils.js";
 import type { ToolDefinitions } from "./types.js";
 
+const rawFetch = async (url: string) => {
+	try {
+		const parsedUrl = new URL(
+			['http://', 'https://'].some(p => url.startsWith(p)) ? url : `https://${url}`
+		);
+
+		// Use the same fetch logic as httpGet but optimized for analysis
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => {
+			console.log(`Fetch timeout reached for: ${url}`);
+			controller.abort();
+		}, 20000); // 20 second timeout for analysis
+
+		console.log(`Fetching content from: ${url}`);
+		const request = await fetch(parsedUrl, {
+			signal: controller.signal,
+			headers: {
+				'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Analyzer/1.0)',
+				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+			}
+		});
+
+		clearTimeout(timeoutId);
+
+		if (!request.ok) {
+			throw new Error(`HTTP ${request.status}: ${request.statusText}`);
+		}
+
+		const body = await request.text();
+		console.log(`Fetched ${body.length} characters from: ${url}`);
+		
+		return body;
+
+	} catch (error) {
+		console.error(`Error fetching ${url}:`, error);
+		if (error instanceof Error && error.name === 'AbortError') {
+			throw new Error(`Fetch timeout after 20 seconds for: ${url}`);
+		}
+		throw error;
+	}
+}
+
 export const standard: ToolDefinitions = {
-	webFetch: {
+	fetch: {
 		description: dedent`
-			Fetches content from the web by URL.
+			Fetch raw content from an HTTPS URL via a GET request.
 		`,
 		arguments: dedent`
 			1. url: string
 		`,
 		async execute(url: string) {
-			console.log(`[webFetch] Received webFetch request for: ${url}`);
-
-			try {
-				const parsedUrl = new URL(
-					['http://', 'https://'].some(p => url.startsWith(p)) ? url : `https://${url}`
-				);
-
-				// Use the same fetch logic as httpGet but optimized for analysis
-				const controller = new AbortController();
-				const timeoutId = setTimeout(() => {
-					console.log(`[webFetch] Timeout reached for: ${url}`);
-					controller.abort();
-				}, 20000); // 20 second timeout for analysis
-
-				console.log(`[webFetch] Fetching content from: ${url}`);
-				const request = await fetch(parsedUrl, {
-					signal: controller.signal,
-					headers: {
-						'User-Agent': 'Mozilla/5.0 (compatible; WireJS-Analyzer/1.0)',
-						'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-					}
-				});
-
-				clearTimeout(timeoutId);
-
-				if (!request.ok) {
-					throw new Error(`HTTP ${request.status}: ${request.statusText}`);
-				}
-
-				const body = await request.text();
-				console.log(`[webFetch] Fetched ${body.length} characters from: ${url}`);
-				
-				// Return raw content - chunking will be handled automatically by executeToolWithSubAgent
-				return body;
-
-			} catch (error) {
-				console.error(`[webFetch] Error fetching ${url}:`, error);
-				if (error instanceof Error && error.name === 'AbortError') {
-					throw new Error(`Fetch timeout after 20 seconds for: ${url}`);
-				}
-				throw error;
-			}
+			console.log(`[fetch] Received request for: ${url}`);
+			return rawFetch(url);			
+		}
+	},
+	fetch_html_content_text: {
+		description: dedent`
+			Extract the text content from HTML at the given URL.
+		`,
+		arguments: dedent`
+			1. url: string
+		`,
+		async execute(url: string) {
+			console.log(`[natural language fetch] Received request for: ${url}`);
+			const content = extractContentFromHtml(await rawFetch(url));
+			console.log(`Extracted content:\n${content}`);
+			return content;
 		}
 	},
 };

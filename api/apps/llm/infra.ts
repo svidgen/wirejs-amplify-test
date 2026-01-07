@@ -14,7 +14,7 @@ import {
 import { fromAsync, pad } from "./utils.js";
 import { Chunk, ChunkData, Conversation, ConversationMessage } from "./types.js";
 
-export type AssistOptions = {
+export type PromptOptions = {
 	systemPromptOverride?: string;
 	history: LLMMessage[];
 } | {
@@ -53,10 +53,12 @@ export class Infra extends Resource {
 		this.modelSetting = makeModelsOverrideSetting(this);
 	}
 
-	async assist(options: AssistOptions): Promise<LLMMessage> {
+	async prompt(options: PromptOptions): Promise<LLMMessage> {
 		// TODO: debounce and/or redesign model settings relationship
 		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
 		if (overrides.length > 0) this.llm.models = overrides;
+
+		console.log('prompt', (options as any).prompt);
 
 		return this.llm.continueConversation({
 			systemPrompt: options.systemPromptOverride,
@@ -96,6 +98,12 @@ export class Infra extends Resource {
 				}
 			}) : undefined
 		;
+
+		console.log(
+			'continue conversation',
+			options.systemPromptOverride,
+			(options as any).prompt
+		);
 
 		const result = await this.llm.continueConversation({
 			systemPrompt: options.systemPromptOverride,
@@ -146,6 +154,13 @@ export class Infra extends Resource {
 			type: 'title',
 			value: name
 		});
+	}
+
+	async updateConversationContext(conversationId: string, context: string): Promise<void> {
+		const conversation = await this.getConversation(conversationId);
+		if (!conversation) throw new Error("Conversation doesn't exist.");
+		conversation.context = context;
+		await this.conversations.save(conversation);
 	}
 
 	async getConversation(conversationId: string): Promise<Conversation | undefined> {

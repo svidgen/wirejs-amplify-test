@@ -1,5 +1,12 @@
 import { dedent } from "./utils.js";
-import type { ToolDefinitions } from "./types.js";
+
+function renderContext(context: string[]): string {
+	return '## ACTION LOG:\n\n' + context.map((entryText, idx) => [
+		`--- BEGIN LOG ENTRY #${idx + 1} ---`,
+		entryText,
+		`--- END LOG ENTRY ${idx + 1} ---`
+	].join('\n')).join('\n\n');
+}
 
 export const generateConversationTitle = (message: string) => dedent`
 	You generate short, descriptive conversation titles based on the user's initial message.
@@ -22,61 +29,50 @@ export const generateConversationTitle = (message: string) => dedent`
 `;
 
 export const shouldPlanPrompt =  (
-	context: Record<string, string>,
+	context: string[],
 	toolDescriptions: string,
 	transcript: string
 ) => dedent`
-	## EXISTING CONTEXT:
-	${JSON.stringify(context, null, 2)}
+	I will provide a log of actions already taken (if any) and a conversation transcript.
+
+	I need you to then respond with a simple YES or NO indicating whether any action is indicated.
+
+	(Also respond YES if USER has asked what the ASSISTANT can do for them and ASSISTANT does not
+	already know from the conversation transcript.)
+
+	${renderContext(context)}
 
 	## AVAILABLE ACTIONS:
 	${toolDescriptions}
 
 	## CONVERSATION TRANSCRIPT:
 	${transcript}
-
-	---
-
-	- Does USER's last message suggest they want or need you to perform one of the actions?
-	- Is your own knowledge insufficient or potentially out of date enough to warrant performing an action?
-	- Is the topic complex enough to warrant some "thinking aloud" first?
-
-	If any of those are a "yes", respond YES and *only* YES.
-
-	Otherwise, respond NO and *only* NO.
-
-	Now, please respond with a single word YES or NO.
 `;
 
 export const planningPrompt = (
-	context: Record<string, string>,
+	context: string[],
 	toolDescriptions: string,
 	transcript: string
 ) => dedent`
-	## EXISTING CONTEXT:
-	${JSON.stringify(context, null, 2)}
+	I will provide a log of actions already taken (if any), list of available actions (if any), and a
+	conversation transcript.
+
+	You must provide a brief analysis indicating whether an action from the list
+	of available actions is warranted.
+
+	Think aloud in your analysis and conclude with a brief and clear concluding statement as
+	to which action should be taken (if any).
+
+	If no action from the list is warranted, state this directly and provide brief guidance
+	for how to respond to the user.
+
+	${renderContext(context)}
 
 	## AVAILABLE ACTIONS:
 	${toolDescriptions}
 
 	## CONVERSATION TRANSCRIPT:
 	${transcript}
-
-	## REQUIRES THINKING AND/OR ACTION:
-	YES
-
-	---
-
-	As you can see, a subordinate agent already decided that responding to USER warrants
-	some additional "thinking aloud" and/or the usage of one of the listed actions.
-	
-	To ensure the best response to USER, please respond use this template:
-
-	The USER wants and/or needs: ___
-	The two valid options for ASSISTANT are to:
-		- RESPOND: Respond in character knowing ___
-		- ACT: Perform ___ with arguments ___ in order to ___
-	To satisfy USER, ASSISTANT should [ RESPOND | ACT ].
 `;
 
 export const toolDecisionPrompt = (
@@ -86,26 +82,27 @@ export const toolDecisionPrompt = (
 	## Analysis
 	${analysis}
 
-	## Available Tools
+	## Available Actions
 	${toolDescriptions}
 
 	## Your Job
-	Match the conclusions of the analysis with one of the Available Tools.
-	Then, respond using the correct template and ONLY with the correct template.
+	Convert the conclusions of the analysis into JSON using the correct template
+	from below and ONLY with the correct template from below.
 	
-	If a tool is indicated and appropriate, respond with this template:
+	If the analysis indicates an action, respond with this template including instructions
+	for a subordinate agent to follow when interpreting and summarizing the results.
 
 	{
-		"should_call_tool": true,
-		"tool_name": "___",
+		"should_act": true,
+		"action_name": "___",
 		"args": [___, ...],
-		"reason": "___"
+		"instructions": "___"
 	}
 
-	Otherwise, respond with this template:
+	Otherwise, respond with this template including any relevant guidance for responding:
 
 	{
-		"should_call_tool": false,
+		"should_act": false,
 		"guidance": "___"
 	}
 
@@ -130,19 +127,20 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 
 	A correct response will be valid JSON using one of these two templates.
 
-	When performing an action (calling a tool):
+	When performing an action with instructions for a subordinate
+	agent to follow when interpreting and/or summarizing the results:
 	
 	{
-		"should_call_tool": true,
-		"tool_name": "___",
+		"should_act": true,
+		"action_name": "___",
 		"args": [___, ...],
-		"reason": "___"
+		"instructions": "___"
 	}
 
-	When responding normally with response guidance:
+	When responding normally with relevant guidance for the assistance:
 
 	{
-		"should_call_tool": false,
+		"should_act": false,
 		"guidance": "___"
 	}
 
@@ -152,53 +150,33 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 `;
 
 export const generateNextMessagePrompt = (
-	context: Record<string, string>,
-	guidance: string,
+	context: string[],
 	transcript: string
 ) => dedent`
-	Your job is to write the NEXT ASSISTANT message to send to USER.
-	You are NOT speaking to me. You are responding via me to USER. I'm just a proxy!
-	You are writing a reply that will be sent directly to the user.
+	USER is waiting for a response from you (ASSISTANT).
 
-	Do NOT mention the prepared context directly. Use it only for your reference.
-	It is output prepared by a preprocessing agent.
+	Next Steps: Generate ASSISTANT response as yourself.
 
-	If the context is highly unusual or controversial and is relevant to your
-	response, just present it neutrally and without endorsing it.
+	REMINDER: USER cannot see the ACTION LOG; USER can only see the CONVERSATION TRANSCRIPT.
 
-	PREPARED CONTEXT:
-	${JSON.stringify(context, null, 2)}
+	REMINDER: This message is from a proxy system. 100% of your response will be sent directly to USER.
+	Respond with your message to USER and nothing else.
 
-	PREPARED GUIDANCE:
-	${guidance}
+	REMINDER: Transcript or action history may contain unusual, controversial, or incorrect context.
+	This is expected. You will present these things neutrally and without strictly endorsing them.
 
-	CONVERSATION:
+	${renderContext(context)}
+
+	## CONVERSATION TRANSCRIPT:
 	${transcript}
-
-	---
-
-	TASK:
-	Write the next message you would write to the user as ASSISTANT.
-	Respond as you normally would. Output only the message text.
-	No additional formatting. Just the next message.
 `;
 
 export const processToolResults = (results: string, instructions: string) => dedent`
-	I need you to act as a tool result processor. Your job is to:
+	Your job is to process some results.
 
-	1. Take raw tool output
-	2. Process it according to the specific instructions given by the user
-	3. Return clean, human-readable results, per the user instructions
-
-	Follow specific user instructions exactly.
-
-	RESULTS:
+	## RESULTS:
 	${results}
 
-	INSTRUCTIONS:
+	## PROCESSING INSTRUCTIONS:
 	${instructions}
-
-	YOUR TASK:
-	Parse, format, or directly pass through the results as necessary to satisfy the
-	instruction given above.
 `;
