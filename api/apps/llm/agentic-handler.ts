@@ -21,6 +21,7 @@ const assignConversationName = async (infra: Infra, conversationId: string, mess
 }
 
 const tools = standard;
+const toolDescriptions = JSON.stringify(tools, null, 2);
 const hasTools = Object.keys(tools).length > 0;
 
 async function handleToolCalling(
@@ -52,7 +53,7 @@ async function handleToolCalling(
 					status: `⚒️ Calling ${args.action_name} ...`
 				});
 
-				const toolResult = await standard[args.action_name].execute(...args.args);
+				const toolResult = await standard[args.action_name].execute(args.arguments);
 				// NOTE! Here's where we potentially need chunked processing.
 
 				const processedResult = (await infra.prompt({
@@ -63,18 +64,17 @@ async function handleToolCalling(
 				})).content;
 
 				context.push(dedent`
-					Performed ${args.action_name} with ${args.args} and instruction "${args.instructions}"
-					and got result: ${processedResult}`
+					Performed Action: ${args.action_name}
+					With Arguments: ${JSON.stringify(args.arguments)}
+					With Instruction: "${args.instructions}"
+					Got Result: ${processedResult}`
 				);
 				trimContext(context);
 
 				return true;
 			} else {
 				if (args.guidance) {
-					context.push(dedent`Updated Guidance: ${args.guidance}.`);
-					trimContext(context);
-				} else {
-					context.push(dedent`Updated Guidance: Respond in character as you normally would.`);
+					context.push(dedent`${args.guidance}.`);
 					trimContext(context);
 				}
 				return false;
@@ -115,12 +115,6 @@ export const agenticHandler = (infra: Infra) => async (
 		let mid = history.length;
 		history.push(await infra.addMessage(room, mid++, 'user', newUserMessage));
 
-		// context blocks for sub-agents
-		const transcript = history.map(h =>
-			`${h.role.toUpperCase()}: ${h.content}`.replace(/\n|\r/g, ' ')
-		).join('\n')
-		const toolDescriptions = JSON.stringify(tools);
-
 		// if we're just getting started, we want a user friendly conversation title.
 		let titlePromise: Promise<any> | undefined = undefined;
 		if (mid === 1) {
@@ -135,7 +129,7 @@ export const agenticHandler = (infra: Infra) => async (
 			if (!hasTools) break;
 		
 			const requiresPlanningAnswer = await infra.prompt({
-				prompt: shouldPlanPrompt(context, toolDescriptions, transcript)
+				prompt: shouldPlanPrompt(context, toolDescriptions, history)
 			});
 			console.log({ requiresPlanningAnswer });
 			const answer = requiresPlanningAnswer.content.trim().toLocaleLowerCase();
@@ -149,7 +143,7 @@ export const agenticHandler = (infra: Infra) => async (
 			});
 
 			const nextStepOutput = await infra.prompt({
-				prompt: planningPrompt(context, toolDescriptions, transcript)
+				prompt: planningPrompt(context, toolDescriptions, history)
 			});
 
 			const analysis = nextStepOutput.content.trim();
@@ -169,7 +163,7 @@ export const agenticHandler = (infra: Infra) => async (
 		await infra.respond({
 			conversationId: room,
 			mid,
-			prompt: generateNextMessagePrompt(context, transcript)
+			prompt: generateNextMessagePrompt(context, history)
 		});
 		await titlePromise;
 		await infra.sendControlMessage(room, { type: 'end' }, mid);

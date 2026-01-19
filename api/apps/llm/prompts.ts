@@ -1,12 +1,68 @@
 import { dedent } from "./utils.js";
+import { ConversationMessage } from "./types.js";
 
 function renderContext(context: string[]): string {
-	return '## ACTION LOG:\n\n' + context.map((entryText, idx) => [
-		`--- BEGIN LOG ENTRY #${idx + 1} ---`,
+	return '## WORK LOG:\n\n' + context.map((entryText, idx) => [
+		// `--- BEGIN WORK LOG ENTRY #${idx + 1} ---`,
 		entryText,
-		`--- END LOG ENTRY ${idx + 1} ---`
+		// `--- END WORK LOG ENTRY #${idx + 1} ---`
 	].join('\n')).join('\n\n');
 }
+
+function renderTranscript(
+	history: ConversationMessage[],
+	tail: number = 0
+) {
+	const messages = tail > 0
+		? [...history, `(Truncated to last ${tail} messages.)`].reverse().slice(0, tail).reverse()
+		: history;
+	return messages.map(m => typeof m === 'string' ? `\n${m}`
+		: `${m.role.toUpperCase()}: ${m.content}`.replace(/\n|\r/g, ' ')
+	).join('\n');
+}
+
+const ACTION_USAGE_RULES = dedent`
+	## RULES FOR ACTIONS:
+
+	- Review existing WORK LOG before performing a fresh action
+	- Use only appropriate actions where action description clearly matches USER need or ASSISTANT action plan
+`;
+
+const WORK_LOG_RULES = dedent`
+	## WORK LOG RULES:
+
+	- The WORK LOG is the private source of truth for thoughts and actions already taken.
+	- The WORK LOG to date with the latest message in the transcript and should be treated
+	as your source of truth.
+	- USER cannot see the WORK LOG. USER can ONLY see the CONVERSATION TRANSCRIPT.
+	- DO NOT fabricate work done or actions taken! If it's not in the work log, it wasn't done!
+`
+
+const ARGUMENTS_EXPLANATION = dedent`
+	The arguments property for each action will specified similar to this example:
+
+	"arguments": {
+		"title": {
+			"type": "string",
+			"description": "The title of the book."
+		},
+		"pages": {
+			"type": "number",
+			"description": "The number of pages to write."
+		}
+	}
+
+	The description on each field describes what to put in the field. The type describes the
+	data type to use. The full arguments property should be an object that mirrors the definition
+	but whose types match the type fields. E.g.,
+
+	"arguments": {
+		"title": "The Big Brown Bear Book",
+		"pages": 12
+	}
+
+	Note how the arguments definition indicates the types used in the arguments data.
+`;
 
 export const generateConversationTitle = (message: string) => dedent`
 	You generate short, descriptive conversation titles based on the user's initial message.
@@ -31,61 +87,68 @@ export const generateConversationTitle = (message: string) => dedent`
 export const shouldPlanPrompt =  (
 	context: string[],
 	toolDescriptions: string,
-	transcript: string
+	history: ConversationMessage[]
 ) => dedent`
-	I will provide a log of actions already taken (if any) and a conversation transcript.
+	You need to respond with a simple YES or NO indicating whether ASSISTANT should either take one
+	of the listed available actions.
 
-	I need you to then respond with a simple YES or NO indicating whether any action is indicated.
+	${ACTION_USAGE_RULES}
 
-	(Also respond YES if USER has asked what the ASSISTANT can do for them and ASSISTANT does not
-	already know from the conversation transcript.)
-
-	${renderContext(context)}
+	${WORK_LOG_RULES}
 
 	## AVAILABLE ACTIONS:
 	${toolDescriptions}
 
+	${renderContext(context)}
+
 	## CONVERSATION TRANSCRIPT:
-	${transcript}
+	${renderTranscript(history, 8)}
+
+	## YOUR TASK:
+	Respond with YES or NO only. Should ASSISTANT perform one of the available actions?
 `;
 
 export const planningPrompt = (
 	context: string[],
 	toolDescriptions: string,
-	transcript: string
+	history: ConversationMessage[]
 ) => dedent`
-	I will provide a log of actions already taken (if any), list of available actions (if any), and a
-	conversation transcript.
+	Your job is to provide a brief analysis of which action from a list of available actions ASSISTANT
+	should describe to USER or perform (if necessary).
 
-	You must provide a brief analysis indicating whether an action from the list
-	of available actions is warranted.
+	${ACTION_USAGE_RULES}
 
-	Think aloud in your analysis and conclude with a brief and clear concluding statement as
-	to which action should be taken (if any).
-
-	If no action from the list is warranted, state this directly and provide brief guidance
-	for how to respond to the user.
-
-	${renderContext(context)}
+	${WORK_LOG_RULES}
 
 	## AVAILABLE ACTIONS:
 	${toolDescriptions}
 
+	${renderContext(context)}
+
 	## CONVERSATION TRANSCRIPT:
-	${transcript}
+	${renderTranscript(history, 8)}
+
+	## YOUR TASK:
+	Think aloud. Then, respond EITHER with instructions for which action to use and what inputs to use
+	OR directly state your conclusion not to perform an action.
 `;
 
 export const toolDecisionPrompt = (
 	analysis: string,
 	toolDescriptions: string,
 ) => dedent`
-	## Analysis
-	${analysis}
+	Your job is to translate an analysis into JSON. Respond ONLY with valid JSON.
+	Your full response will be parsed in full as written.
 
-	## Available Actions
+	${ARGUMENTS_EXPLANATION}
+
+	## AVAILABLE ACTIONS:
 	${toolDescriptions}
 
-	## Your Job
+	## ANALYSIS:
+	${analysis}
+
+	## YOUR TASK:
 	Convert the conclusions of the analysis into JSON using the correct template
 	from below and ONLY with the correct template from below.
 	
@@ -95,11 +158,11 @@ export const toolDecisionPrompt = (
 	{
 		"should_act": true,
 		"action_name": "___",
-		"args": [___, ...],
+		"arguments": { ___ },
 		"instructions": "___"
 	}
 
-	Otherwise, respond with this template including any relevant guidance for responding:
+	Otherwise, respond with this template including any relevant thinking (guidance) for ASSISTANT:
 
 	{
 		"should_act": false,
@@ -113,31 +176,34 @@ export const toolDecisionPrompt = (
 
 export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 	An attempt to perform an action was made. However, something in the Previous Attempt
-	was formatted incorrectly, a data type was incorrect, or similar issue.
+	was formatted incorrectly, a data type was incorrect, or similar issue. Your job is to
+	fix the JSON action call definition.
 
-	## Previous Attempt
+	${ARGUMENTS_EXPLANATION}
+
+	## PREVIOUS ATTEMPT:
 	${toolDecision}
 
-	## Resulting Error
+	## RESULTING ERROR:
 	${error}
 
-	## Your Job
+	## YOUR TASK:
 	Determine what is wrong with the Previous Attempt. Then, respond with the corrected
 	template and ONLY the corrected template.
 
-	A correct response will be valid JSON using one of these two templates.
+	Reminder: A correct response will be valid JSON using one of these two templates.
 
 	When performing an action with instructions for a subordinate
-	agent to follow when interpreting and/or summarizing the results:
+	agent to follow when interpreting and summarizing the results:
 	
 	{
 		"should_act": true,
 		"action_name": "___",
-		"args": [___, ...],
+		"arguments": { ___ },
 		"instructions": "___"
 	}
 
-	When responding normally with relevant guidance for the assistance:
+	When responding normally with relevant thinking (guidance) for ASSISTANT:
 
 	{
 		"should_act": false,
@@ -151,32 +217,35 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 
 export const generateNextMessagePrompt = (
 	context: string[],
-	transcript: string
+	history: ConversationMessage[]
 ) => dedent`
-	USER is waiting for a response from you (ASSISTANT).
+	Your task is to write the next message from ASSISTANT to USER in the conversation
+	transcript below.
 
-	Next Steps: Generate ASSISTANT response as yourself.
+	${WORK_LOG_RULES}
 
-	REMINDER: USER cannot see the ACTION LOG; USER can only see the CONVERSATION TRANSCRIPT.
-
-	REMINDER: This message is from a proxy system. 100% of your response will be sent directly to USER.
-	Respond with your message to USER and nothing else.
-
-	REMINDER: Transcript or action history may contain unusual, controversial, or incorrect context.
-	This is expected. You will present these things neutrally and without strictly endorsing them.
+	You must only the next message and ONLY the next message to USER.
+	Your response will be appended 100% as you have written it into the transcript.
 
 	${renderContext(context)}
 
 	## CONVERSATION TRANSCRIPT:
-	${transcript}
+	${renderTranscript(history)}
+
+	## YOUR TASK:
+	Write the next most fitting message from ASSISTANT to USER.
 `;
 
 export const processToolResults = (results: string, instructions: string) => dedent`
-	Your job is to process some results.
+	Your job is to interpret and summarize the result of an action that has been
+	performed according to some specific instructions.
 
 	## RESULTS:
 	${results}
 
-	## PROCESSING INSTRUCTIONS:
+	## INSTRUCTIONS:
 	${instructions}
+
+	## YOUR TASK:
+	Interpret and summarize the results according to the instructions.
 `;

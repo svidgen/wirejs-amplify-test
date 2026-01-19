@@ -33,7 +33,7 @@ export type ConversationMessage = {
 
 export type ToolDefinition = {
 	description: string;
-	arguments: string;
+	arguments: Record<string, { type: string, description: string }>;
 	execute: (...args: any) => Promise<any>
 };
 

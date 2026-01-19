@@ -44,14 +44,28 @@ const rawFetch = async (url: string) => {
 }
 
 export const standard: ToolDefinitions = {
+	describe_capabilities: {
+		description: dedent`
+			Describes the list of actions that can be performed.
+		`,
+		arguments: {},
+		async execute() {
+			const { describe_capabilities, ...actions } = standard;
+			const def = JSON.stringify(actions, null, 2);
+			return `Available Actions and Capabilities:\n${def}`
+		}
+	},
 	fetch: {
 		description: dedent`
-			Fetch raw content from an HTTPS URL via a GET request.
+			Fetch raw content from an HTTP(S) URL via a GET request.
 		`,
-		arguments: dedent`
-			1. url: string
-		`,
-		async execute(url: string) {
+		arguments: {
+			url: {
+				type: 'string',
+				description: "Fully qualified URL string to fetch."
+			}
+		},
+		async execute({ url }: { url: string }) {
 			console.log(`[fetch] Received request for: ${url}`);
 			return rawFetch(url);			
 		}
@@ -60,14 +74,22 @@ export const standard: ToolDefinitions = {
 		description: dedent`
 			Extract the text content from HTML at the given URL.
 		`,
-		arguments: dedent`
-			1. url: string
-		`,
-		async execute(url: string) {
+		arguments: {
+			url: {
+				type: 'string',
+				description: "Fully qualified URL string to fetch."
+			}
+		},
+		async execute({ url }: { url: string }) {
 			console.log(`[natural language fetch] Received request for: ${url}`);
 			const content = extractContentFromHtml(await rawFetch(url));
 			console.log(`Extracted content:\n${content}`);
 			return content;
 		}
 	},
+	// web_search: {
+	// 	description: dedent`
+	// 		Searches the web
+	// 	`
+	// }
 };
