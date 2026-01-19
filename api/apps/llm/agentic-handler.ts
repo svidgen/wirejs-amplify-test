@@ -64,10 +64,11 @@ async function handleToolCalling(
 				})).content;
 
 				context.push(dedent`
-					Performed Action: ${args.action_name}
-					With Arguments: ${JSON.stringify(args.arguments)}
-					With Instruction: "${args.instructions}"
-					Got Result: ${processedResult}`
+					#### Performed Action:
+					Action Name: ${args.action_name}
+					Arguments: ${JSON.stringify(args.arguments)}
+					Interpretive Lens: "${args.instructions}"
+					${processedResult}`
 				);
 				trimContext(context);
 

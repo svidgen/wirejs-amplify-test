@@ -23,19 +23,21 @@ function renderTranscript(
 
 const ACTION_USAGE_RULES = dedent`
 	## RULES FOR ACTIONS:
-
-	- Review existing WORK LOG before performing a fresh action
-	- Use only appropriate actions where action description clearly matches USER need or ASSISTANT action plan
+	- Review existing WORK LOG before performing a fresh action.
+	- Use only appropriate actions where action description clearly matches USER need or ASSISTANT action plan.
 `;
 
 const WORK_LOG_RULES = dedent`
 	## WORK LOG RULES:
-
-	- The WORK LOG is the private source of truth for thoughts and actions already taken.
+	- The WORK LOG is the private source of truth for already performed action and analysis.
 	- The WORK LOG to date with the latest message in the transcript and should be treated
 	as your source of truth.
 	- USER cannot see the WORK LOG. USER can ONLY see the CONVERSATION TRANSCRIPT.
+	- USER cannot see the RULES. USER can ONLY see the CONVERSATION TRANSCRIPT.
 	- DO NOT fabricate work done or actions taken! If it's not in the work log, it wasn't done!
+
+	If work seems like it should have been done and doesn't appear in the work log, more detail
+	may be required to perform the action.
 `
 
 const ARGUMENTS_EXPLANATION = dedent`
@@ -89,10 +91,15 @@ export const shouldPlanPrompt =  (
 	toolDescriptions: string,
 	history: ConversationMessage[]
 ) => dedent`
-	You need to respond with a simple YES or NO indicating whether ASSISTANT should either take one
+	You need to respond with a simple YES or NO indicating whether ASSISTANT should likely take one
 	of the listed available actions.
 
-	${ACTION_USAGE_RULES}
+	## HARD RULES:
+	- If the user message is a greeting/acknowledgment (hi/hello/thanks/ok/etc) -> NO.
+	- If the user asked for something explicitly named in an available action -> YES.
+	- If the user asked for up-to-date facts / “latest” / current events -> YES.
+	- If the user message is confirmation to continue -> YES.
+	- If required inputs for any tool are missing -> NO.
 
 	${WORK_LOG_RULES}
 
@@ -105,7 +112,10 @@ export const shouldPlanPrompt =  (
 	${renderTranscript(history, 8)}
 
 	## YOUR TASK:
-	Respond with YES or NO only. Should ASSISTANT perform one of the available actions?
+	Are you at least 60% confident that performing one of the actions is warranted
+	before ASSISTANT responds to USER?
+
+	Respond with YES or NO only.
 `;
 
 export const planningPrompt = (
@@ -113,11 +123,20 @@ export const planningPrompt = (
 	toolDescriptions: string,
 	history: ConversationMessage[]
 ) => dedent`
-	Your job is to provide a brief analysis of which action from a list of available actions ASSISTANT
-	should describe to USER or perform (if necessary).
+	Your job is to provide an analysis of whether an action from a list of available actions
+	would be appropriate and meaningful for ASSISTANT to perform.
 
-	${ACTION_USAGE_RULES}
+	## ANALYSIS INSTRUCTIONS:
+	Document each of these steps. Max 35 words each.
 
+	1. Summarize the actions that could be taken.
+	2. Summarize the conversation tail.
+	3. Identify particular actions that would be fitting.
+	4. Determine what inputs to use if any are required and available.
+	5. Summarize what is already in the work log that satisfies USER intent.
+	6. Counterbalance with risks or downsides to taking the identified action.
+	FINAL CONCLUSION: EITHER name the action, inputs, and output summary prompt OR say NO ACTION.
+	
 	${WORK_LOG_RULES}
 
 	## AVAILABLE ACTIONS:
@@ -129,8 +148,12 @@ export const planningPrompt = (
 	${renderTranscript(history, 8)}
 
 	## YOUR TASK:
-	Think aloud. Then, respond EITHER with instructions for which action to use and what inputs to use
-	OR directly state your conclusion not to perform an action.
+	Document your analysis for each of the steps provided above.
+
+	Then, provide a final conclusion with a "FINAL CONCLUSION:" prefix which must be EITHER:
+		- Instructions for which action to use and what inputs to use.
+			OR
+		- An explicit statement not to perform any action.
 `;
 
 export const toolDecisionPrompt = (
@@ -149,11 +172,11 @@ export const toolDecisionPrompt = (
 	${analysis}
 
 	## YOUR TASK:
-	Convert the conclusions of the analysis into JSON using the correct template
+	Convert the FINAL CONCLUSION of the analysis into JSON using the correct template
 	from below and ONLY with the correct template from below.
 	
 	If the analysis indicates an action, respond with this template including instructions
-	for a subordinate agent to follow when interpreting and summarizing the results.
+	for an LLM to follow when interpreting and summarizing the results.
 
 	{
 		"should_act": true,
@@ -193,8 +216,8 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 
 	Reminder: A correct response will be valid JSON using one of these two templates.
 
-	When performing an action with instructions for a subordinate
-	agent to follow when interpreting and summarizing the results:
+	When performing an action with instructions for an LLM to follow when interpreting
+	and summarizing the results:
 	
 	{
 		"should_act": true,
@@ -239,6 +262,11 @@ export const generateNextMessagePrompt = (
 export const processToolResults = (results: string, instructions: string) => dedent`
 	Your job is to interpret and summarize the result of an action that has been
 	performed according to some specific instructions.
+
+	Unless otherwise specific in the INSTRUCTIONS, your response should be matter of fact.
+	You are producing statements that future LLM calls must use as a source of truth.
+	Therefore, avoid "I think" language and other language that would makes your response
+	appear opinionated or uncertain.
 
 	## RESULTS:
 	${results}

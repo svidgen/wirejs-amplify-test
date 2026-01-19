@@ -89,7 +89,7 @@ export const standard: ToolDefinitions = {
 	},
 	// web_search: {
 	// 	description: dedent`
-	// 		Searches the web
+	// 		Searches the web 
 	// 	`
 	// }
 };
