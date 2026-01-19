@@ -29,7 +29,7 @@ export const intId = () => Math.floor((Date.now() + Math.random()) * 10_000);
  */
 export const cleanTitle = (title: string) => {
 	let cleanTitle = title.trim();
-	if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) || 
+	if ((cleanTitle.startsWith('"') && cleanTitle.endsWith('"')) ||
 		(cleanTitle.startsWith("'") && cleanTitle.endsWith("'"))) {
 		cleanTitle = cleanTitle.slice(1, -1).trim();
 	}
@@ -47,20 +47,20 @@ export const extractContentFromHtml = (html: string): string => {
 
 	try {
 		console.log(`[HTML] Starting cheerio extraction from ${html.length} chars`);
-		
+
 		// Load HTML into cheerio for DOM manipulation
 		const $ = cheerio.load(html);
-		
+
 		// Remove unwanted elements entirely (more efficient than regex)
 		$('script, style, nav, header, footer, aside').remove();
 		$('.mw-navigation, .navbox, .infobox, .sidebar').remove(); // Wikipedia-specific
 		$('[class*="nav"], [class*="menu"], [class*="sidebar"]').remove(); // Common patterns
-		
+
 		// Remove common noise elements
 		$('.reference, .citation, sup.reference').remove(); // Citations
 		$('.printfooter, .catlinks').remove(); // Wikipedia footer stuff
 		$('table.ambox, .hatnote').remove(); // Wikipedia message boxes
-		
+
 		// Extract text with cleaned up whitespace
 		let text = $('body').text()
 			.replace(/\s+/g, ' ')          // Normalize whitespace
@@ -68,7 +68,7 @@ export const extractContentFromHtml = (html: string): string => {
 			.replace(/\s*\n\s*/g, '\n')    // Clean line breaks
 			.replace(/\n{3,}/g, '\n\n')    // Limit consecutive newlines
 			.trim();
-		
+
 		console.log(`[HTML] Final cheerio extracted text: ${text.length} chars`);
 		return text;
 	} catch (error) {
@@ -100,13 +100,13 @@ export const chunkTextWithOverlap = (
 	if (text.length <= chunkSize) {
 		return [text];
 	}
-	
+
 	const chunks: string[] = [];
 	let start = 0;
-	
+
 	while (start < text.length) {
 		let end = Math.min(start + chunkSize, text.length);
-		
+
 		// For larger chunks, try multiple natural break points
 		if (end < text.length) {
 			// Look for natural breaks in order of preference
@@ -117,7 +117,7 @@ export const chunkTextWithOverlap = (
 				text.lastIndexOf(', ', end),        // Clause breaks (okay)
 				text.lastIndexOf(' ', end)          // Word breaks (fallback)
 			];
-			
+
 			// Use the first break point that's in a reasonable position
 			for (const breakPoint of breakPoints) {
 				if (breakPoint > start + chunkSize * 0.7) {
@@ -126,16 +126,16 @@ export const chunkTextWithOverlap = (
 				}
 			}
 		}
-		
+
 		chunks.push(text.slice(start, end));
 		start = end - overlapSize; // Create overlap for context continuity
-		
+
 		// Ensure we don't go backwards
 		if (start <= chunks[chunks.length - 1].length - overlapSize) {
 			start = chunks[chunks.length - 1].length - overlapSize + 1;
 		}
 	}
-	
+
 	return chunks;
 };
 
@@ -228,7 +228,7 @@ export const chunkReduce = async (
 	characterLimit: number = 30_000 * 2.5  // fairly safe at 2.5 characters per token
 ): Promise<string> => {
 	const batches: string[][] = [];
-	
+
 	let batch: string[] = [];
 	let batchSize: number = 0;
 	for (const chunk of chunks) {
@@ -267,4 +267,27 @@ export const chunkReduce = async (
 		batchResults.push(await chunkReduce(batch, process, characterLimit));
 	}
 	return chunkReduce(batchResults, process, characterLimit);
+}
+
+export function parseLLMJson(raw: string) {
+	if (!raw || typeof raw !== "string") {
+		throw new Error("Empty or non-string LLM output");
+	}
+
+	let text = raw.trim();
+
+	if (text.startsWith("```")) {
+		text = text.replace(/^```[a-zA-Z]*\s*/, "");
+		text = text.replace(/```$/, "");
+		text = text.trim();
+	}
+
+	if (text.toLowerCase().startsWith("json")) {
+		const after = text.slice(4).trim();
+		if (after.startsWith("{")) {
+			text = after;
+		}
+	}
+
+	return JSON.parse(text);
 }

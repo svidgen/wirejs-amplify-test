@@ -41,29 +41,42 @@ const WORK_LOG_RULES = dedent`
 `
 
 const ARGUMENTS_EXPLANATION = dedent`
-	The arguments property for each action will specified similar to this example:
+	The arguments property for each action will specify named fields. Each field will include
+	a "type" that indicates the JSON data type to use. The description of each field indicates
+	the purpose and/or usage of the field.
 
-	"arguments": {
-		"title": {
-			"type": "string",
-			"description": "The title of the book."
-		},
-		"pages": {
-			"type": "number",
-			"description": "The number of pages to write."
-		}
+	When populating arguments, you must match the intended inputs to the appropriate action field
+	and write it using the correct JSON type.
+`;
+
+const ACTION_CALL_RULES = dedent`
+	If the analysis indicates action, respond with this template:
+	
+	{
+		"should_act": true,
+		"action_name": "___",
+		"arguments": { ___ },
+		"instructions": "___"
 	}
 
-	The description on each field describes what to put in the field. The type describes the
-	data type to use. The full arguments property should be an object that mirrors the definition
-	but whose types match the type fields. E.g.,
+	When responding normally, respond with this template where "guidance" is optional steering
+	for future response generation:
 
-	"arguments": {
-		"title": "The Big Brown Bear Book",
-		"pages": 12
+	{
+		"should_act": false,
+		"guidance": "___"
 	}
 
-	Note how the arguments definition indicates the types used in the arguments data.
+	## RULES:
+
+	- Respond with a correct JSON template ONLY and nothing else.
+	- DO NOT ADD MARKDOWN.
+	- DO NOT ADD COMMENTARY.
+	- DO NOT WRAP YOUR RESPONSE IN CODE FENCES, BACKTICKS, OR TILDE CHARACTERS.
+	- Respond with raw JSON.
+
+	The first character of your response must STRICTLY be left bracket: {
+	The last character of your response must strictly be right bracket: }
 `;
 
 export const generateConversationTitle = (message: string) => dedent`
@@ -123,20 +136,30 @@ export const planningPrompt = (
 	toolDescriptions: string,
 	history: ConversationMessage[]
 ) => dedent`
-	Your job is to provide an analysis of whether an action from a list of available actions
-	would be appropriate and meaningful for ASSISTANT to perform.
+	Your job is decide whether an action from a list of available actions
+	would be appropriate and meaningful before ASSISTANT responds to USER.
 
 	## ANALYSIS INSTRUCTIONS:
-	Document each of these steps. Max 35 words each.
+	Follow these steps (max 35 words each):
 
-	1. Summarize the actions that could be taken.
-	2. Summarize the conversation tail.
-	3. Identify particular actions that would be fitting.
-	4. Determine what inputs to use if any are required and available.
-	5. Summarize what is already in the work log that satisfies USER intent.
-	6. Counterbalance with risks or downsides to taking the identified action.
-	FINAL CONCLUSION: EITHER name the action, inputs, and output summary prompt OR say NO ACTION.
-	
+	Step 1: Describe the USER intent from the tail of the transcript in one short sentence.
+	(If unclear, say "unclear".)
+
+	Step 2: State the action that would satisfy the intent.
+	(If none are relevant, say "none".)
+
+	Step 3: State whether the action was already done according to the WORK LOG.
+	(Say "yes", "no", or "not applicable" followed by one sentence indicating evidence from WORK LOG.)
+
+	Step 4: If an action is still needed to satisfy intent, give the required input values.
+	(If inputs are not clear and obvious, say "inputs missing". If choosing no action, say "not applicable".)
+
+	Step 5: Explain what ASSISTANT needs to know from the results of the action.
+	(If choosing no action, say "not applicable".)
+
+	Step 6: Clearly state whether ASSISTANT should actually perform the action.
+	("yes" or "no".)
+
 	${WORK_LOG_RULES}
 
 	## AVAILABLE ACTIONS:
@@ -148,12 +171,7 @@ export const planningPrompt = (
 	${renderTranscript(history, 8)}
 
 	## YOUR TASK:
-	Document your analysis for each of the steps provided above.
-
-	Then, provide a final conclusion with a "FINAL CONCLUSION:" prefix which must be EITHER:
-		- Instructions for which action to use and what inputs to use.
-			OR
-		- An explicit statement not to perform any action.
+	Perform the analysis.
 `;
 
 export const toolDecisionPrompt = (
@@ -162,6 +180,8 @@ export const toolDecisionPrompt = (
 ) => dedent`
 	Your job is to translate an analysis into JSON. Respond ONLY with valid JSON.
 	Your full response will be parsed in full as written.
+
+	${ACTION_CALL_RULES}
 
 	${ARGUMENTS_EXPLANATION}
 
@@ -172,35 +192,15 @@ export const toolDecisionPrompt = (
 	${analysis}
 
 	## YOUR TASK:
-	Convert the FINAL CONCLUSION of the analysis into JSON using the correct template
-	from below and ONLY with the correct template from below.
-	
-	If the analysis indicates an action, respond with this template including instructions
-	for an LLM to follow when interpreting and summarizing the results.
-
-	{
-		"should_act": true,
-		"action_name": "___",
-		"arguments": { ___ },
-		"instructions": "___"
-	}
-
-	Otherwise, respond with this template including any relevant thinking (guidance) for ASSISTANT:
-
-	{
-		"should_act": false,
-		"guidance": "___"
-	}
-
-	Respond ONLY with the filled in JSON template nothing else.
-
-	(Your response must be fully valid JSON and ONLY fully valid JSON.)
+	Convert the analysis into JSON using the correct template.
 `;
 
 export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 	An attempt to perform an action was made. However, something in the Previous Attempt
 	was formatted incorrectly, a data type was incorrect, or similar issue. Your job is to
 	fix the JSON action call definition.
+
+	${ACTION_CALL_RULES}
 
 	${ARGUMENTS_EXPLANATION}
 
@@ -211,31 +211,7 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 	${error}
 
 	## YOUR TASK:
-	Determine what is wrong with the Previous Attempt. Then, respond with the corrected
-	template and ONLY the corrected template.
-
-	Reminder: A correct response will be valid JSON using one of these two templates.
-
-	When performing an action with instructions for an LLM to follow when interpreting
-	and summarizing the results:
-	
-	{
-		"should_act": true,
-		"action_name": "___",
-		"arguments": { ___ },
-		"instructions": "___"
-	}
-
-	When responding normally with relevant thinking (guidance) for ASSISTANT:
-
-	{
-		"should_act": false,
-		"guidance": "___"
-	}
-
-	Respond ONLY with a new (corrected) JSON template and nothing else.
-
-	(Your response must be fully valid JSON and ONLY fully valid JSON.)
+	Review the errors from the Previous Attempt and respond with the corrected template.
 `;
 
 export const generateNextMessagePrompt = (
@@ -248,7 +224,7 @@ export const generateNextMessagePrompt = (
 	${WORK_LOG_RULES}
 
 	You must only the next message and ONLY the next message to USER.
-	Your response will be appended 100% as you have written it into the transcript.
+	Your response will be forwarded 100% as you have written to USER.
 
 	${renderContext(context)}
 
@@ -256,7 +232,7 @@ export const generateNextMessagePrompt = (
 	${renderTranscript(history)}
 
 	## YOUR TASK:
-	Write the next most fitting message from ASSISTANT to USER.
+	Write the next message from ASSISTANT to USER.
 `;
 
 export const processToolResults = (results: string, instructions: string) => dedent`

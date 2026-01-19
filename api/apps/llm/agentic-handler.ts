@@ -1,5 +1,5 @@
 import { Infra } from './infra.js'
-import { cleanTitle, dedent } from './utils.js';
+import { cleanTitle, dedent, parseLLMJson } from './utils.js';
 import {
 	generateConversationTitle,
 	generateNextMessagePrompt,
@@ -32,7 +32,7 @@ async function handleToolCalling(
 	toolDescriptions: string,
 ) {
 	let lastError: any = undefined;
-	let maxAttempts = 10;
+	let maxAttempts = 3;
 	let args: any;
 	let toolDecision: string = '{}';
 	while (maxAttempts-- >= 0) {
@@ -43,7 +43,7 @@ async function handleToolCalling(
 			)).content;
 
 			console.log({ toolDecision });
-			args = JSON.parse(toolDecision);
+			args = parseLLMJson(toolDecision);
 
 			console.log(args);
 
