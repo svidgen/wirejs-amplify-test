@@ -11,6 +11,7 @@
 	"dependencies": {
 		"cheerio": "^1.1.2",
 		"dompurify": "^3.2.3",
+		"jsdom": "^27.4.0",
 		"marked": "^15.0.6",
 		"wirejs-components": "^0.1.91-llm",
 		"wirejs-dom": "^1.0.44",
@@ -19,6 +20,7 @@
 		"wirejs-web-worker": "^1.0.45-llm"
 	},
 	"devDependencies": {
+		"@types/jsdom": "^27.0.0",
 		"typescript": "^5.7.3",
 		"wirejs-scripts": "^3.0.146-llm"
 	},

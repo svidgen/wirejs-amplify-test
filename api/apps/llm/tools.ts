@@ -1,5 +1,6 @@
 import { dedent, extractContentFromHtml } from "./utils.js";
 import type { ToolDefinitions } from "./types.js";
+import { JSDOM } from "jsdom";
 
 const rawFetch = async (url: string) => {
 	try {
@@ -44,17 +45,17 @@ const rawFetch = async (url: string) => {
 }
 
 export const standard: ToolDefinitions = {
-	describe_capabilities: {
-		description: dedent`
-			Describes the list of actions that can be performed.
-		`,
-		arguments: {},
-		async execute() {
-			const { describe_capabilities, ...actions } = standard;
-			const def = JSON.stringify(actions, null, 2);
-			return `Available Actions and Capabilities:\n${def}`
-		}
-	},
+	// describe_capabilities: {
+	// 	description: dedent`
+	// 		Describes the list of actions that can be performed.
+	// 	`,
+	// 	arguments: {},
+	// 	async execute() {
+	// 		const { describe_capabilities, ...actions } = standard;
+	// 		const def = JSON.stringify(actions, null, 2);
+	// 		return `Available Actions and Capabilities:\n${def}`
+	// 	}
+	// },
 	fetch: {
 		description: dedent`
 			Fetch raw content from an HTTP(S) URL via a GET request.
@@ -65,7 +66,7 @@ export const standard: ToolDefinitions = {
 				description: "Fully qualified URL string to fetch."
 			}
 		},
-		async execute({ url }: { url: string }) {
+		async execute({ url } : { url: string }) {
 			console.log(`[fetch] Received request for: ${url}`);
 			return rawFetch(url);			
 		}
@@ -73,6 +74,8 @@ export const standard: ToolDefinitions = {
 	fetch_html_content_text: {
 		description: dedent`
 			Extract the text content from HTML at the given URL.
+			This should be the default when fetching "content" from an HTML page, since it
+			avoids the overhead of flooding the context window with raw HTML.
 		`,
 		arguments: {
 			url: {
@@ -80,16 +83,55 @@ export const standard: ToolDefinitions = {
 				description: "Fully qualified URL string to fetch."
 			}
 		},
-		async execute({ url }: { url: string }) {
+		async execute({ url } : { url: string }) {
 			console.log(`[natural language fetch] Received request for: ${url}`);
 			const content = extractContentFromHtml(await rawFetch(url));
 			console.log(`Extracted content:\n${content}`);
 			return content;
 		}
 	},
-	// web_search: {
-	// 	description: dedent`
-	// 		Searches the web 
-	// 	`
-	// }
+	web_search: {
+		description: dedent`
+			Searches the web using DuckDuckGo.
+		`,
+		arguments: {
+			query: {
+				type: 'string',
+				description: 'Search text to use for searching the web. Supports DuckDuckGo search syntax.'
+			}
+		},
+		async execute({ query } : { query: string }) {
+			console.log(`[searching] query: ${query}`);
+			const rawHtml = await rawFetch(`https://html.duckduckgo.com/html/?q=${query}`);
+			return parseDuckDuckGoResults(rawHtml);
+		}
+	}
+};
+
+const parseDuckDuckGoResults = (html: string) : string => {
+	const results: Array<{ url: string; title: string; description: string }> = [];
+	const dom = new JSDOM(html);
+	const doc = dom.window.document;
+	
+	const resultElements = doc.querySelectorAll('.result');
+	
+	resultElements.forEach((element) => {
+		const titleEl = element.querySelector('.result__a');
+		const snippetEl = element.querySelector('.result__snippet');
+		const linkEl = element.querySelector('a.result__a') as HTMLAnchorElement;
+		
+		if (titleEl && snippetEl && linkEl) {
+			const url = new URL(linkEl.getAttribute('href') || '', 'https://html.duckduckgo.com');
+			const uddgParam = url.searchParams.get('uddg');
+			const decodedUrl = uddgParam ? decodeURIComponent(uddgParam) : '';
+			
+			results.push({
+				url: decodedUrl,
+				title: titleEl.textContent?.trim() || '',
+				description: snippetEl.textContent?.trim() || ''
+			});
+		}
+	});
+	
+	return JSON.stringify(results, null, 2);
 };
