@@ -30,7 +30,7 @@ async function handleToolCalling(
 	context: string[],
 	analysis: string,
 	toolDescriptions: string,
-) {
+) : Promise<{ toolCalled: boolean; guidance?: string }> {
 	let lastError: any = undefined;
 	let maxAttempts = 3;
 	let args: any;
@@ -67,18 +67,14 @@ async function handleToolCalling(
 					#### Performed Action:
 					Action Name: ${args.action_name}
 					Arguments: ${JSON.stringify(args.arguments)}
-					Interpretive Lens: "${args.instructions}"
+					Analysis Performed: "${args.instructions}"
 					${processedResult}`
 				);
 				trimContext(context);
 
-				return true;
+				return { toolCalled: true };
 			} else {
-				if (args.guidance) {
-					context.push(dedent`${args.guidance}.`);
-					trimContext(context);
-				}
-				return false;
+				return { toolCalled: false, guidance: args.guidance };
 			}
 		} catch (error: any) {
 			lastError = error;
@@ -126,6 +122,8 @@ export const agenticHandler = (infra: Infra) => async (
 		let maxIterations = 5;
 
 		const context = await getContext(infra, room);
+		let guidance: string = 'Respond normally.';
+
 		do {
 			if (!hasTools) break;
 		
@@ -149,7 +147,11 @@ export const agenticHandler = (infra: Infra) => async (
 
 			const analysis = nextStepOutput.content.trim();
 			console.log({ analysis });
-			const toolCalled = await handleToolCalling(infra, room, context, analysis, toolDescriptions);
+			const {
+				toolCalled,
+				guidance: returnedGuidance
+			} = await handleToolCalling(infra, room, context, analysis, toolDescriptions);
+			guidance = returnedGuidance ?? guidance;
 			if (!toolCalled) break;
 		} while (--maxIterations > 0);
 
@@ -164,7 +166,7 @@ export const agenticHandler = (infra: Infra) => async (
 		await infra.respond({
 			conversationId: room,
 			mid,
-			prompt: generateNextMessagePrompt(context, history)
+			prompt: generateNextMessagePrompt(context, history, guidance)
 		});
 		await titlePromise;
 		await infra.sendControlMessage(room, { type: 'end' }, mid);

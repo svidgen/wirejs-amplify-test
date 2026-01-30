@@ -148,7 +148,7 @@ export const planningPrompt = (
 	Step 2: State the action that would satisfy the intent.
 	(If none are relevant, say "none".)
 
-	Step 3: State whether the action was already done according to the WORK LOG.
+	Step 3: State whether the implied action was already done according to the WORK LOG.
 	(Say "yes", "no", or "not applicable" followed by one sentence indicating evidence from WORK LOG.)
 
 	Step 4: If an action is still needed to satisfy intent, give the required input values.
@@ -158,7 +158,7 @@ export const planningPrompt = (
 	(If choosing no action, say "not applicable".)
 
 	Step 6: Clearly state whether ASSISTANT should actually perform the action.
-	("yes" or "no".)
+	("yes" or "no". Choose "no" if already completed or WORK LOG contains sufficient context per user intent.)
 
 	${WORK_LOG_RULES}
 
@@ -216,7 +216,8 @@ export const toolArgsFix = (toolDecision: string, error: string) => dedent`
 
 export const generateNextMessagePrompt = (
 	context: string[],
-	history: ConversationMessage[]
+	history: ConversationMessage[],
+	guidance: string
 ) => dedent`
 	Your task is to write the next message from ASSISTANT to USER in the conversation
 	transcript below.
@@ -228,14 +229,22 @@ export const generateNextMessagePrompt = (
 
 	${renderContext(context)}
 
+	## GUIDANCE:
+	${guidance}
+
 	## CONVERSATION TRANSCRIPT:
 	${renderTranscript(history)}
 
 	## YOUR TASK:
 	Write the next message from ASSISTANT to USER.
+
+	Reminder: USER can only see messages under CONVERSATION TRANSCRIPT and DO NOT mention the WORK LOG.
 `;
 
-export const processToolResults = (results: string, instructions: string) => dedent`
+export const processToolResults = (
+	results: string,
+	instructions: string = "Return the results. If greater than 500 words, summarize results first."
+) => dedent`
 	Your job is to interpret and summarize the result of an action that has been
 	performed according to some specific instructions.
 
@@ -251,5 +260,5 @@ export const processToolResults = (results: string, instructions: string) => ded
 	${instructions}
 
 	## YOUR TASK:
-	Interpret and summarize the results according to the instructions.
+	Respond according to the instructions above.
 `;
