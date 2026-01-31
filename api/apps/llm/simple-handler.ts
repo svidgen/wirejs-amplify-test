@@ -3,7 +3,7 @@ import { cleanTitle, dedent } from './utils.js';
 import { generateConversationTitle } from './prompts.js';
 
 const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
-	const titleResponse = await infra.assist({
+	const titleResponse = await infra.prompt({
 		prompt: generateConversationTitle(message),
 	});
 	const name = cleanTitle(titleResponse.content);
