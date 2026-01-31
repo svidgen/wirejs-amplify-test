@@ -34,6 +34,7 @@ export type RespondOptions = {
 };
 
 export type InfraOptions = {
+	models?: string[];
 	systemPrompt?: string;
 }
 
@@ -49,7 +50,7 @@ export class Infra extends Resource {
 		this.conversations = makeConversationsTable(this);
 		this.messages = makeMessagesTable(this);
 		this.realtime = makeRealtimeService(this);
-		this.llm = makeLLMService(this, options?.systemPrompt);
+		this.llm = makeLLMService(this, options?.systemPrompt, options?.models);
 		this.modelSetting = makeModelsOverrideSetting(this);
 	}
 
@@ -277,12 +278,13 @@ const makeMessagesTable = (scope: Resource) => new DistributedTable(
 	}
 );
 
-const makeLLMService = (scope: Resource, systemPrompt?: string) => new LLMService(scope, 'llm', {
-	models: ['llama3.2', 'llama3:8b', 'llama2'],
-	systemPrompt
-});
+const makeLLMService = (scope: Resource, systemPrompt?: string, models?: string[]) => 
+	new LLMService(scope, 'llm', {
+		models: models ?? ['gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'],
+		systemPrompt
+	});
 
 const makeModelsOverrideSetting = (scope: Resource) => new Setting(scope, 'models', {
 	private: false,
-	init: () => 'llama3.2, llama3:8b, llama2'
+	init: () => 'gemma3:4b, llama3.2, llama3:8b, llama2'
 });
