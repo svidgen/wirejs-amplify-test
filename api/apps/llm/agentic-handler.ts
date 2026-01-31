@@ -80,6 +80,7 @@ async function handleToolCalling(
 			lastError = error;
 		}
 	}
+	return { toolCalled: false };
 }
 
 function trimContext(context: string[], maxChars: number = 8000) {
