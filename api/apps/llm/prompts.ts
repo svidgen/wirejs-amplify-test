@@ -41,12 +41,18 @@ const WORK_LOG_RULES = dedent`
 `
 
 const ARGUMENTS_EXPLANATION = dedent`
-	The arguments property for each action will specify named fields. Each field will include
-	a "type" that indicates the JSON data type to use. The description of each field indicates
-	the purpose and/or usage of the field.
+	Each action specifies an "arguments" property and describes the JSON data type to use you must
+	populate in the field when specifying the action. The "description" field indicates when or how
+	you should populate the field.
 
 	When populating arguments, you must match the intended inputs to the appropriate action field
 	and write it using the correct JSON type.
+
+	IMPORTANT: DO NOT LITERALLY ECHO THE "arguments" FROM THE ACTION DEFINITION.
+
+	That would be silly. Instead, when argument "x" specifies type "string", you MUST include
+	in your "arguments" object an "x" field set to an appropriate string. For a field with a type
+	of "number", you MUST set it to a number.
 `;
 
 const ACTION_CALL_RULES = dedent`

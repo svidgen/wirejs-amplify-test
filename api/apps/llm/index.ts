@@ -9,7 +9,7 @@ export type { Chunk, ChunkData, Conversation, ConversationMessage } from './type
 
 export const LLM = (auth: AuthenticationApi) => {
 	const infra = new Infra('app', 'llm', {
-		models: ['gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'],
+		models: ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'],
 		systemPrompt: "You are a helpful assistant."
 	});
 

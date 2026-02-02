@@ -14,6 +14,8 @@ import {
 import { fromAsync, pad } from "./utils.js";
 import { Chunk, ChunkData, Conversation, ConversationMessage } from "./types.js";
 
+const DEFAULT_MODELS_LIST = ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'];
+
 export type PromptOptions = {
 	systemPromptOverride?: string;
 	history: LLMMessage[];
@@ -51,7 +53,7 @@ export class Infra extends Resource {
 		this.messages = makeMessagesTable(this);
 		this.realtime = makeRealtimeService(this);
 		this.llm = makeLLMService(this, options?.systemPrompt, options?.models);
-		this.modelSetting = makeModelsOverrideSetting(this);
+		this.modelSetting = makeModelsOverrideSetting(this, options?.models);
 	}
 
 	async prompt(options: PromptOptions): Promise<LLMMessage> {
@@ -280,11 +282,11 @@ const makeMessagesTable = (scope: Resource) => new DistributedTable(
 
 const makeLLMService = (scope: Resource, systemPrompt?: string, models?: string[]) => 
 	new LLMService(scope, 'llm', {
-		models: models ?? ['gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'],
+		models: models ?? DEFAULT_MODELS_LIST,
 		systemPrompt
 	});
 
-const makeModelsOverrideSetting = (scope: Resource) => new Setting(scope, 'models', {
+const makeModelsOverrideSetting = (scope: Resource, models?: string[]) => new Setting(scope, 'models', {
 	private: false,
-	init: () => 'gemma3:4b, llama3.2, llama3:8b, llama2'
+	init: () => (models ?? DEFAULT_MODELS_LIST).join(', ')
 });
