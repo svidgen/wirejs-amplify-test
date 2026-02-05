@@ -111,7 +111,10 @@ export const agenticHandler = (infra: Infra) => async (
 		// now, we can get and save state
 		const history = await infra.getHistory(room);
 		let mid = history.length;
-		history.push(await infra.addMessage(room, mid++, 'user', newUserMessage));
+		history.push(await infra.addMessage(room, mid++, {
+			role: 'user',
+			content: newUserMessage
+		}));
 
 		// if we're just getting started, we want a user friendly conversation title.
 		let titlePromise: Promise<any> | undefined = undefined;

@@ -1,5 +1,5 @@
 import { dedent, extractContentFromHtml } from "./utils.js";
-import type { ToolDefinitions } from "./types.js";
+import type { ToolDefinition } from "./types.js";
 import { JSDOM } from "jsdom";
 
 const rawFetch = async (url: string) => {
@@ -44,26 +44,25 @@ const rawFetch = async (url: string) => {
 	}
 }
 
-export const standard: ToolDefinitions = {
-	// describe_capabilities: {
-	// 	description: dedent`
-	// 		Describes the list of actions that can be performed.
-	// 	`,
-	// 	arguments: {},
-	// 	async execute() {
-	// 		const { describe_capabilities, ...actions } = standard;
-	// 		const def = JSON.stringify(actions, null, 2);
-	// 		return `Available Actions and Capabilities:\n${def}`
-	// 	}
-	// },
-	fetch: {
+/**
+ * Standard tool definitions include searching and fetching web content.
+ */
+export const standard: ToolDefinition[] = [
+	{
+		name: 'fetch',
 		description: dedent`
-			Fetch raw content from an HTTP(S) URL via a GET request.
+			Fetches raw content from an HTTP(S) URL via a GET request.
+
+			Use fetch ONLY when the precise URL is known and expected to contain
+			"raw data" like CSV, JSON, XML, YML, or plain text.
 		`,
-		arguments: {
-			url: {
-				type: 'string',
-				description: "Fully qualified URL string to fetch."
+		parameters: {
+			type: 'object',
+			properties: {	
+				url: {
+					type: 'string',
+					description: "Fully qualified URL string to fetch."
+				}
 			}
 		},
 		async execute({ url } : { url: string }) {
@@ -71,16 +70,21 @@ export const standard: ToolDefinitions = {
 			return rawFetch(url);			
 		}
 	},
-	fetch_html_content_text: {
+	{
+		name: 'fetch_html_content_text',
 		description: dedent`
-			Extract the text content from HTML at the given URL.
-			This should be the default when fetching "content" from an HTML page, since it
-			avoids the overhead of flooding the context window with raw HTML.
+			Extracts the text content from HTML at the given URL.
+
+			Use fetch_html_content_text ONLY when the precise URL is known and expected
+			to be an HTML page with meaningful content to extract.
 		`,
-		arguments: {
-			url: {
-				type: 'string',
-				description: "Fully qualified URL string to fetch."
+		parameters: {
+			type: 'object',
+			properties: {
+				url: {
+					type: 'string',
+					description: "Fully qualified URL string to fetch."
+				}
 			}
 		},
 		async execute({ url } : { url: string }) {
@@ -90,14 +94,22 @@ export const standard: ToolDefinitions = {
 			return content;
 		}
 	},
-	web_search: {
+	{
+		name: 'web_search',
 		description: dedent`
 			Searches the web using DuckDuckGo.
+
+			Use web_search ONLY when user intent indicates a need for information from the web
+			or when relying on your own knowledge to respond to the user would result in
+			potential mis-information. I.e., if the subject matter is temporally sensitive.
 		`,
-		arguments: {
-			query: {
-				type: 'string',
-				description: 'Search text to use for searching the web. Supports DuckDuckGo search syntax.'
+		parameters: {
+			type: 'object',
+			properties: {
+				query: {
+					type: 'string',
+					description: 'Search text to use for searching the web. Supports DuckDuckGo search syntax.'
+				}
 			}
 		},
 		async execute({ query } : { query: string }) {
@@ -106,7 +118,7 @@ export const standard: ToolDefinitions = {
 			return parseDuckDuckGoResults(rawHtml);
 		}
 	}
-};
+];
 
 const parseDuckDuckGoResults = (html: string) : string => {
 	const results: Array<{ url: string; title: string; description: string }> = [];

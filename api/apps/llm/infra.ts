@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import {
+	AssistantMessage,
 	Context,
 	DistributedTable,
 	LLM as LLMService,
@@ -10,6 +11,8 @@ import {
 	Resource,
 	Setting,
 	User,
+	ToolCall,
+	ToolDefinition,
 } from "wirejs-resources";
 import { fromAsync, pad } from "./utils.js";
 import { Chunk, ChunkData, Conversation, ConversationMessage } from "./types.js";
@@ -19,25 +22,30 @@ const DEFAULT_MODELS_LIST = ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b',
 export type PromptOptions = {
 	systemPromptOverride?: string;
 	history: LLMMessage[];
+	tools?: ToolDefinition[];
 } | {
 	systemPromptOverride?: string;
 	prompt: string;
+	tools?: ToolDefinition[];
 };
 
 export type RespondOptions = {
 	conversationId: string;
 	history: LLMMessage[];
 	systemPromptOverride?: string;
+	tools?: ToolDefinition[],
 } | {
 	conversationId: string;
 	mid: number;
 	prompt: string;
 	systemPromptOverride?: string;
+	tools?: ToolDefinition[],
 };
 
 export type InfraOptions = {
 	models?: string[];
 	systemPrompt?: string;
+	tools?: ToolDefinition[],
 }
 
 export class Infra extends Resource {
@@ -46,6 +54,7 @@ export class Infra extends Resource {
 	private realtime: ReturnType<typeof makeRealtimeService>;
 	private llm: ReturnType<typeof makeLLMService>;
 	private modelSetting: ReturnType<typeof makeModelsOverrideSetting>;
+	private tools?: ToolDefinition[];
 
 	constructor(scope: string | Resource, id: string, options?: InfraOptions) {
 		super(scope, id);
@@ -56,10 +65,10 @@ export class Infra extends Resource {
 		this.modelSetting = makeModelsOverrideSetting(this, options?.models);
 	}
 
-	async prompt(options: PromptOptions): Promise<LLMMessage> {
+	async prompt(options: PromptOptions): Promise<AssistantMessage> {
 		// TODO: debounce and/or redesign model settings relationship
-		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
-		if (overrides.length > 0) this.llm.models = overrides;
+		const models = (await this.modelSetting.read()).split(',').map(s => s.trim());
+		const tools = options.tools ?? this.tools;
 
 		console.log('prompt', (options as any).prompt);
 
@@ -68,14 +77,15 @@ export class Infra extends Resource {
 			history: 'history' in options ? options.history : [{
 				role: 'user',
 				content: options.prompt
-			}]
+			}],
+			...(models.length > 0 ? { models } : {}),
+			...(tools ? { tools } : {}),
 		});
 	}
 
-	async respond(options: RespondOptions): Promise<ConversationMessage> {
+	async respond(options: RespondOptions): Promise<ConversationMessage & AssistantMessage> {
 		// TODO: debounce and/or redesign model settings relationship
-		const overrides = (await this.modelSetting.read()).split(',').map(s => s.trim());
-		if (overrides.length > 0) this.llm.models = overrides;
+		const models = (await this.modelSetting.read()).split(',').map(s => s.trim());
 
 		const mid = 'mid' in options ? options.mid : options.history.length;
 
@@ -108,14 +118,19 @@ export class Infra extends Resource {
 			(options as any).prompt
 		);
 
+		const tools = options.tools ?? this.tools;
+
 		const result = await this.llm.continueConversation({
 			systemPrompt: options.systemPromptOverride,
 			history: 'history' in options ? options.history : [{
 				role: 'user',
 				content: options.prompt
 			}],
-			onChunk
+			onChunk,
+			...(models.length > 0 ? { models } : {}),
+			...(tools ? { tools } : {}),
 		});
+
 		
 		if (batch.length > 0) {
 			const text = batch.join('');
@@ -127,7 +142,7 @@ export class Infra extends Resource {
 			}]);
 		}
 
-		return this.addMessage(options.conversationId, mid, 'assistant', result.content);
+		return this.addMessage(options.conversationId, mid, result);
 	}
 
 	async createConversation(user: User): Promise<Conversation> {
@@ -217,22 +232,20 @@ export class Infra extends Resource {
 		return messagesArray;
 	};
 
-	async addMessage(
+	async addMessage<T extends LLMMessage>(
 		conversationId: string,
 		mid: number,
-		role: ConversationMessage['role'],
-		content: string,
-	): Promise<ConversationMessage> {
-		const message: ConversationMessage = {
+		message: T
+	): Promise<ConversationMessage & T> {
+		const fullMessage: ConversationMessage = {
 			conversationId,
 			mid,
-			role,
-			content,
+			...message,
 			createdAt: Date.now()
 		};
 
-		await this.messages.save(message, { onlyIfNotExists: true });
-		return message;
+		await this.messages.save(fullMessage, { onlyIfNotExists: true });
+		return fullMessage;
 	};
 
 	getStream(context: Context, conversationId: string) {

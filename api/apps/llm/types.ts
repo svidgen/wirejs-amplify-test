@@ -1,4 +1,4 @@
-import { LLMMessage } from "wirejs-resources";
+import { LLMMessage, ToolCall, ToolDefinition as BaseToolDefinition } from "wirejs-resources";
 
 export type Chunk = {
 	mid: number;
@@ -23,20 +23,14 @@ export type Conversation = {
 	context?: string;
 };
 
-export type ConversationMessage = {
+export type ConversationMessage = LLMMessage & {
 	conversationId: string;
 	mid: number;
-	role: 'user' | 'assistant';
-	content: string;
 	createdAt: number;
 };
 
-export type ToolDefinition = {
-	description: string;
-	arguments: Record<string, { type: string, description: string }>;
+export type ToolDefinition = BaseToolDefinition & {
 	execute: (...args: any) => Promise<any>
 };
-
-export type ToolDefinitions = Record<string, ToolDefinition>;
 
 export type Message = LLMMessage;
