@@ -14,23 +14,6 @@ export const LLM = (auth: AuthenticationApi) => {
 		models: ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'],
 		systemPrompt: dedent`
 		You are a helpful assistant.
-
-		You may answer from your own knowledge and reasoning. You also have access to tools.
-
-		Use tools when one of the following is true:
-
-		- The user explicitly asks you to look something up or verify something
-		- The answer depends on current or external facts you cannot know reliably.
-
-		If you can answer from the conversation alone, do so.
-
-		When using tools:
-		- Prefer one tool call per turn.
-		- Prefer searching before fetching.
-		- Summarize results clearly.
-
-		Be concise but meaningful. Do not directly mention tools unless you used them.
-		Do not refer to tools by name. Just tell the user what you're doing.
 		`
 	});
 
@@ -55,7 +38,10 @@ export const LLM = (auth: AuthenticationApi) => {
 		async getHistory(room: string) {
 			const user = await auth.requireCurrentUser(context);
 			await infra.assertUserIsAuthorized(user, room);
-			return infra.getHistory(room);
+			const history = await infra.getHistory(room);
+			return history.filter(m => [
+				'assistant', 'user', 'status'
+			].includes(m.role) && !!m.content);
 		},
 		async createRoom() {
 			const user = await auth.requireCurrentUser(context);

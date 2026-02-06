@@ -15,7 +15,7 @@ import {
 	ToolDefinition,
 } from "wirejs-resources";
 import { fromAsync, pad } from "./utils.js";
-import { Chunk, ChunkData, Conversation, ConversationMessage } from "./types.js";
+import { Chunk, ChunkData, Conversation, ConversationMessage, StatusUpdate } from "./types.js";
 
 const DEFAULT_MODELS_LIST = ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'];
 
@@ -97,6 +97,9 @@ export class Infra extends Resource {
 
 		const onChunk = options.conversationId ?
 			(async (chunk: LLMChunk) => {
+				if (chunk.message.role !== 'assistant') return;
+				if ((chunk.message.tool_calls?.length ?? 0) > 0) return;
+				if (chunk.message.content === '') return;
 				batch.push(chunk.message.content);
 				if (new Date().getTime() - lastBatch > 150) {
 					const text = batch.join('');
@@ -232,7 +235,7 @@ export class Infra extends Resource {
 		return messagesArray;
 	};
 
-	async addMessage<T extends LLMMessage>(
+	async addMessage<T extends LLMMessage | StatusUpdate>(
 		conversationId: string,
 		mid: number,
 		message: T

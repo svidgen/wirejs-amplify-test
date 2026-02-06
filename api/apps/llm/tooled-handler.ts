@@ -3,6 +3,7 @@ import { Infra } from './infra.js'
 import { cleanTitle, dedent } from './utils.js';
 import { generateConversationTitle } from './prompts.js';
 import { standard } from './tools.js';
+import { StatusUpdate } from './types.js';
 
 const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
 	const titleResponse = await infra.prompt({
@@ -40,7 +41,7 @@ export const tooledHandler = (infra: Infra) => async (
 			
 			const response = await infra.respond({
 				conversationId: room,
-				history,
+				history: history.filter(h => h.role !== 'status'),
 				tools,
 				mid: mid++
 			});
@@ -49,6 +50,15 @@ export const tooledHandler = (infra: Infra) => async (
 			for (const call of toolCalls) {
 				const name = call.function.name;
 				const args = call.function.arguments;
+				const statusUpdate = `⚒️ Calling ${name}(${JSON.stringify(args)})`;
+				history.push(await infra.addMessage(room, mid++, {
+					role: 'status',
+					content: statusUpdate
+				}));
+				infra.sendControlMessage(room, {
+					type: 'status',
+					status: statusUpdate.slice(0, 100) + '...'
+				}, mid);
 				try {
 					const t = tools!.find(t => t.name === name);	
 					if (!t) throw new Error(`${name} does not exist.`);
@@ -68,6 +78,11 @@ export const tooledHandler = (infra: Infra) => async (
 					}))
 				}
 			}
+
+			await infra.sendControlMessage(room, {
+				type: 'status',
+				status: `📝 Responding ...`
+			});
 
 			maxLoops--;
 		} while (toolCalls.length > 0);

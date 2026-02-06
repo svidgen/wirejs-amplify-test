@@ -23,7 +23,12 @@ export type Conversation = {
 	context?: string;
 };
 
-export type ConversationMessage = LLMMessage & {
+export type StatusUpdate = {
+	role: 'status';
+	content: string;
+}
+
+export type ConversationMessage = (StatusUpdate | LLMMessage) & {
 	conversationId: string;
 	mid: number;
 	createdAt: number;

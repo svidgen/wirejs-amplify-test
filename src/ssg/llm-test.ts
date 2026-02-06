@@ -5,7 +5,7 @@ import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
 import { llm, Chunk, ChunkData, Conversation } from 'internal-api';
 
-type Role = 'assistant' | 'user';
+type Role = 'assistant' | 'user' | 'status' | 'tool';
 
 const sheet = css`
 	.messages {
@@ -67,6 +67,9 @@ class Message {
 
 	set role(role: Role) {
 		this.view.data.role = role;
+		if (role === 'status') {
+			this.view.style.opacity = "0.5";
+		}
 	}
 
 	// Returns the original unformatted content
@@ -305,8 +308,9 @@ async function Chat() {
 				if (roomId) {
 					// Load conversation history
 					const history = await llm.getHistory(null, roomId);
+					console.log('loaded history', history);
 					for (const msg of history) {
-						const message = new Message(msg.role as 'user' | 'assistant', msg.content);
+						const message = new Message(msg.role, msg.content);
 						self.data.messages.push(message);
 					}
 					
