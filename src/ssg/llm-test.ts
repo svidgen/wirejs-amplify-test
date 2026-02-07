@@ -3,9 +3,7 @@ import DOMPurify from 'dompurify';
 import { html, id, css, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, Chunk, ChunkData, Conversation } from 'internal-api';
-
-type Role = 'assistant' | 'user' | 'status' | 'tool';
+import { llm, Chunk, Conversation, Role } from 'internal-api';
 
 const sheet = css`
 	.messages {
@@ -67,7 +65,7 @@ class Message {
 
 	set role(role: Role) {
 		this.view.data.role = role;
-		if (role === 'status') {
+		if (role === 'step') {
 			this.view.style.opacity = "0.5";
 		}
 	}
@@ -279,6 +277,7 @@ async function Chat() {
 		async createConversation() {
 			try {
 				// New conversation - just create room, don't save to database yet
+				self.data.messageStatus = '';
 				self.disconnect(); 
 				self.activeRoom = await llm.createRoom(null);
 				self.data.messages.splice(0); // Clear messages
@@ -297,6 +296,8 @@ async function Chat() {
 		
 		async loadConversation(roomId: string) {
 			try {
+				self.data.messageStatus = '';
+
 				if (roomId !== self.activeRoom) {
 					// reset states to blank.
 					self.activeRoom = undefined;
@@ -333,6 +334,7 @@ async function Chat() {
 			
 			try {
 				await llm.deleteConversation(null, self.activeRoom);
+				self.data.messageStatus = '';
 				
 				// Clear UI and start new conversation
 				self.data.messages.splice(0);
@@ -410,7 +412,9 @@ async function Chat() {
 					if (messageIndex.has(chunk.mid)) {
 						message = messageIndex.get(chunk.mid)!;
 					} else {
-						message = new Message('assistant');
+						message = new Message(
+							chunk.data.type === 'text' ? chunk.data.role : 'assistant'
+						);
 						self.data.messages.push(message);
 						messageIndex.set(chunk.mid, message);
 					}

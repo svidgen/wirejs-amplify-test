@@ -6,7 +6,7 @@ import {
 // import { agenticHandler } from "./agentic-handler.js";
 import { tooledHandler } from "./tooled-handler.js";
 import { Infra } from "./infra.js";
-export type { Chunk, ChunkData, Conversation, ConversationMessage } from './types.js';
+export type { Chunk, ChunkData, Conversation, ConversationMessage, Role } from './types.js';
 import { dedent } from "./utils.js";
 
 export const LLM = (auth: AuthenticationApi) => {
@@ -40,7 +40,7 @@ export const LLM = (auth: AuthenticationApi) => {
 			await infra.assertUserIsAuthorized(user, room);
 			const history = await infra.getHistory(room);
 			return history.filter(m => [
-				'assistant', 'user', 'status'
+				'assistant', 'user', 'step'
 			].includes(m.role) && !!m.content);
 		},
 		async createRoom() {

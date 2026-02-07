@@ -1,4 +1,6 @@
-import { LLMMessage, ToolCall, ToolDefinition as BaseToolDefinition } from "wirejs-resources";
+import { LLMMessage, ToolDefinition as BaseToolDefinition } from "wirejs-resources";
+
+export type Role = 'assistant' | 'user' | 'step' | 'tool';
 
 export type Chunk = {
 	mid: number;
@@ -12,7 +14,7 @@ export type ChunkData =
 	| { type: 'end' }
 	| { type: 'title', value: string }
 	| { type: 'status', status: string }
-	| { type: 'text', text: string }
+	| { type: 'text', text: string, role: Role }
 ;
 
 export type Conversation = {
@@ -23,12 +25,12 @@ export type Conversation = {
 	context?: string;
 };
 
-export type StatusUpdate = {
-	role: 'status';
+export type WorkflowStep = {
+	role: 'step';
 	content: string;
 }
 
-export type ConversationMessage = (StatusUpdate | LLMMessage) & {
+export type ConversationMessage = (WorkflowStep | LLMMessage) & {
 	conversationId: string;
 	mid: number;
 	createdAt: number;

@@ -15,7 +15,7 @@ import {
 	ToolDefinition,
 } from "wirejs-resources";
 import { fromAsync, pad } from "./utils.js";
-import { Chunk, ChunkData, Conversation, ConversationMessage, StatusUpdate } from "./types.js";
+import { Chunk, ChunkData, Conversation, ConversationMessage, WorkflowStep } from "./types.js";
 
 const DEFAULT_MODELS_LIST = ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'];
 
@@ -108,7 +108,7 @@ export class Infra extends Resource {
 						mid,
 						seq: seq++,
 						pad: pad(),
-						data: { type: 'text', text }
+						data: { type: 'text', text, role: 'assistant' }
 					}]);
 					lastBatch = new Date().getTime();
 				}
@@ -141,7 +141,7 @@ export class Infra extends Resource {
 				mid,
 				seq: seq++,
 				pad: pad(),
-				data: { type: 'text', text }
+				data: { type: 'text', text, role: 'assistant' }
 			}]);
 		}
 
@@ -235,10 +235,11 @@ export class Infra extends Resource {
 		return messagesArray;
 	};
 
-	async addMessage<T extends LLMMessage | StatusUpdate>(
+	async addMessage<T extends LLMMessage | WorkflowStep>(
 		conversationId: string,
 		mid: number,
-		message: T
+		message: T,
+		broadcast: boolean = false
 	): Promise<ConversationMessage & T> {
 		const fullMessage: ConversationMessage = {
 			conversationId,
@@ -248,6 +249,20 @@ export class Infra extends Resource {
 		};
 
 		await this.messages.save(fullMessage, { onlyIfNotExists: true });
+
+		if (broadcast) {
+			await this.realtime.publish(conversationId, [{
+				mid,
+				seq: 0,
+				pad: pad(),
+				data: {
+					type: 'text',
+					text: message.content,
+					role: message.role
+				}
+			}]);
+		}
+
 		return fullMessage;
 	};
 

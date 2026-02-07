@@ -36,33 +36,35 @@ export const tooledHandler = (infra: Infra) => async (
 
 		let maxLoops = 10;
 		let toolCalls: ToolCall[];
+		let responseMid = 0;
 		do {
 			const tools = maxLoops > 0 ? standard : undefined;
 			
 			const response = await infra.respond({
 				conversationId: room,
-				history: history.filter(h => h.role !== 'status'),
+				history: history.filter(h => h.role !== 'step'),
 				tools,
 				mid: mid++
 			});
+			responseMid = response.mid;
 
 			toolCalls = tools && tools.length > 0 ? response.tool_calls ?? [] : [];
 			for (const call of toolCalls) {
 				const name = call.function.name;
 				const args = call.function.arguments;
-				const statusUpdate = `⚒️ Calling ${name}(${JSON.stringify(args)})`;
-				history.push(await infra.addMessage(room, mid++, {
-					role: 'status',
-					content: statusUpdate
-				}));
+				const callString = `${name}(${JSON.stringify(args)})`;
 				infra.sendControlMessage(room, {
 					type: 'status',
-					status: statusUpdate.slice(0, 100) + '...'
+					status: `⚒️ Calling ${callString}`.slice(0, 100) + '...'
 				}, mid);
 				try {
 					const t = tools!.find(t => t.name === name);	
 					if (!t) throw new Error(`${name} does not exist.`);
 					const r = await t.execute(args);
+					history.push(await infra.addMessage(room, mid++, {
+						role: 'step',
+						content: `⚒️ Called ${callString}`.slice(0, 100) + '...',
+					}, true));
 					history.push(await infra.addMessage(room, mid++, {
 						role: 'tool',
 						tool_name: name,
@@ -88,7 +90,7 @@ export const tooledHandler = (infra: Infra) => async (
 		} while (toolCalls.length > 0);
 
 		// finally, unlock the UI by letting it know we're done.
-		await infra.sendControlMessage(room, { type: 'end' }, mid);
+		await infra.sendControlMessage(room, { type: 'end' }, responseMid);
 		
 	} catch (error) {
 		console.error('=== LLM Error ===');
