@@ -3,7 +3,6 @@ import { Infra } from './infra.js'
 import { cleanTitle, dedent } from './utils.js';
 import { generateConversationTitle } from './prompts.js';
 import { standard } from './tools.js';
-import { StatusUpdate } from './types.js';
 
 const assignConversationName = async (infra: Infra, conversationId: string, message: string) => {
 	const titleResponse = await infra.prompt({

@@ -11,10 +11,10 @@ import { dedent } from "./utils.js";
 
 export const LLM = (auth: AuthenticationApi) => {
 	const infra = new Infra('app', 'llm', {
-		models: ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'],
+		models: ['mistral-nemo', 'llama3.2', 'llama3:8b', 'llama2'],
 		systemPrompt: dedent`
-		You are a helpful assistant.
-		`
+			You are a helpful assistant.
+		`,
 	});
 
 	const chatRunner = new BackgroundJob('app', 'chatRunner', {

@@ -11,13 +11,12 @@ import {
 	Resource,
 	Setting,
 	User,
-	ToolCall,
 	ToolDefinition,
 } from "wirejs-resources";
 import { fromAsync, pad } from "./utils.js";
 import { Chunk, ChunkData, Conversation, ConversationMessage, WorkflowStep } from "./types.js";
 
-const DEFAULT_MODELS_LIST = ['gemma3:12b', 'gemma3:4b', 'llama3.2', 'llama3:8b', 'llama2'];
+const DEFAULT_MODELS_LIST = ['mistral-nemo', 'llama3.2', 'llama3:8b', 'llama2'];
 
 export type PromptOptions = {
 	systemPromptOverride?: string;
