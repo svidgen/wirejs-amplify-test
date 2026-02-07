@@ -53,7 +53,7 @@ export const standard: ToolDefinition[] = [
 		description: dedent`
 			Fetches raw content from an HTTP(S) URL via a GET request.
 
-			Use fetch ONLY when the precise URL is known and expected to contain
+			Use fetch ONLY when the URL is known and expected to contain
 			"raw data" like CSV, JSON, XML, YML, or plain text.
 		`,
 		parameters: {
@@ -75,7 +75,7 @@ export const standard: ToolDefinition[] = [
 		description: dedent`
 			Extracts the text content from HTML at the given URL.
 
-			Use fetch_html_content_text ONLY when the precise URL is known and expected
+			Use fetch_html_content_text ONLY when the URL is known and expected
 			to be an HTML page with meaningful content to extract.
 		`,
 		parameters: {
@@ -99,9 +99,10 @@ export const standard: ToolDefinition[] = [
 		description: dedent`
 			Searches the web using DuckDuckGo.
 
-			Use web_search ONLY when user intent indicates a need for information from the web
-			or when relying on your own knowledge to respond to the user would result in
-			potential mis-information. I.e., if the subject matter is temporally sensitive.
+			Use web_search ONLY when user intent indicates a need for information beyond
+			your training or if the subject matter is temporally sensitive AND when a
+			web search is likely to provide the URL you need for a future fetch or
+			fetch_html_content_text call.
 		`,
 		parameters: {
 			type: 'object',

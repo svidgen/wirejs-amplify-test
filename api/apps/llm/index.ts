@@ -3,18 +3,14 @@ import {
 	BackgroundJob,
 	withContext
 } from "wirejs-resources";
-// import { agenticHandler } from "./agentic-handler.js";
 import { tooledHandler } from "./tooled-handler.js";
 import { Infra } from "./infra.js";
 export type { Chunk, ChunkData, Conversation, ConversationMessage, Role } from './types.js';
-import { dedent } from "./utils.js";
 
 export const LLM = (auth: AuthenticationApi) => {
 	const infra = new Infra('app', 'llm', {
 		models: ['mistral-nemo', 'llama3.2', 'llama3:8b', 'llama2'],
-		systemPrompt: dedent`
-			You are a helpful assistant.
-		`,
+		systemPrompt: `You are a helpful assistant.`,
 	});
 
 	const chatRunner = new BackgroundJob('app', 'chatRunner', {

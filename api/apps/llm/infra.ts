@@ -176,13 +176,6 @@ export class Infra extends Resource {
 		});
 	}
 
-	async updateConversationContext(conversationId: string, context: string): Promise<void> {
-		const conversation = await this.getConversation(conversationId);
-		if (!conversation) throw new Error("Conversation doesn't exist.");
-		conversation.context = context;
-		await this.conversations.save(conversation);
-	}
-
 	async getConversation(conversationId: string): Promise<Conversation | undefined> {
 		return this.conversations.get({ conversationId });
 	}

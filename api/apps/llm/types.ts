@@ -22,7 +22,6 @@ export type Conversation = {
 	conversationId: string;
 	name: string;
 	createdAt: number;
-	context?: string;
 };
 
 export type WorkflowStep = {

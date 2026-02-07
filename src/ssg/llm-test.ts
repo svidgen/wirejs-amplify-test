@@ -98,7 +98,7 @@ class Message {
 
 		const newContent = md.join('');
 		this.originalContent = newContent;
-		// Don't filter here - let formatMessage() handle filtering on render
+		// Shouldn't need to filter here. But, seems to matter. *WHY!? 🤔
 		this.view.data.body = formatMessage(newContent);
 
 		if (chunk.data.type === 'start') {
