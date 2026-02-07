@@ -1,6 +1,6 @@
 
 import { randomUUID } from 'crypto';
-import * as cheerio from 'cheerio';
+import { JSDOM } from 'jsdom';
 
 /**
  * Generate a random number of random characters.
@@ -46,33 +46,39 @@ export const extractContentFromHtml = (html: string): string => {
 	}
 
 	try {
-		console.log(`[HTML] Starting cheerio extraction from ${html.length} chars`);
+		console.log(`[HTML] Starting JSDOM extraction from ${html.length} chars`);
 
-		// Load HTML into cheerio for DOM manipulation
-		const $ = cheerio.load(html);
+		// Load HTML into JSDOM for DOM manipulation
+		const dom = new JSDOM(html);
+		const document = dom.window.document;
 
-		// Remove unwanted elements entirely (more efficient than regex)
-		$('script, style, nav, header, footer, aside').remove();
-		$('.mw-navigation, .navbox, .infobox, .sidebar').remove(); // Wikipedia-specific
-		$('[class*="nav"], [class*="menu"], [class*="sidebar"]').remove(); // Common patterns
+		// Remove unwanted elements entirely using querySelectorAll and remove
+		const removeSelectors = [
+			'script, style, nav, header, footer, aside',
+			'.mw-navigation, .navbox, .infobox, .sidebar', // Wikipedia-specific
+			'[class*="nav"], [class*="menu"], [class*="sidebar"]', // Common patterns
+			'.reference, .citation, sup.reference', // Citations
+			'.printfooter, .catlinks', // Wikipedia footer stuff
+			'table.ambox, .hatnote' // Wikipedia message boxes
+		];
 
-		// Remove common noise elements
-		$('.reference, .citation, sup.reference').remove(); // Citations
-		$('.printfooter, .catlinks').remove(); // Wikipedia footer stuff
-		$('table.ambox, .hatnote').remove(); // Wikipedia message boxes
+		removeSelectors.forEach(selector => {
+			document.querySelectorAll(selector).forEach(element => element.remove());
+		});
 
 		// Extract text with cleaned up whitespace
-		let text = $('body').text()
+		const bodyElement = document.body;
+		let text = (bodyElement?.textContent || '')
 			.replace(/\s+/g, ' ')          // Normalize whitespace
 			.replace(/\[\d+\]/g, '')       // Remove citation numbers [1], [2], etc.
 			.replace(/\s*\n\s*/g, '\n')    // Clean line breaks
 			.replace(/\n{3,}/g, '\n\n')    // Limit consecutive newlines
 			.trim();
 
-		console.log(`[HTML] Final cheerio extracted text: ${text.length} chars`);
+		console.log(`[HTML] Final JSDOM extracted text: ${text.length} chars`);
 		return text;
 	} catch (error) {
-		console.error('Error extracting text with cheerio:', error);
+		console.error('Error extracting text with JSDOM:', error);
 		// Fallback to simple regex approach
 		console.log('[HTML] Falling back to regex extraction');
 		return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
