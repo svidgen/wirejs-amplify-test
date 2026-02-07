@@ -10,7 +10,7 @@
 	],
 	"dependencies": {
 		"dompurify": "^3.2.3",
-		"jsdom": "^25.0.0",
+		"jsdom": "^21.0.0",
 		"marked": "^15.0.6",
 		"wirejs-components": "^0.1.95-llm",
 		"wirejs-dom": "^1.0.44",
