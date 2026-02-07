@@ -4,9 +4,9 @@ import { Todos } from './apps/todos.js';
 import { Wiki } from './apps/wiki.js';
 import { Store } from './apps/store.js';
 import { Admin } from './apps/admin.js';
-import { LLM } from './apps/llm.js';
+import { LLM } from './apps/llm/index.js';
 
-export type * from './apps/llm.js';
+export type * from './apps/llm/index.js';
 export type * from './apps/todos.js';
 export type * from './apps/store.js';
 export type * from './apps/admin.js';

@@ -3,9 +3,7 @@ import DOMPurify from 'dompurify';
 import { html, id, css, hydrate, list, text, node } from 'wirejs-dom/v2';
 import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
-import { llm, Chunk } from 'internal-api';
-
-type Role = 'assistant' | 'user';
+import { llm, Chunk, Conversation, Role } from 'internal-api';
 
 const sheet = css`
 	.messages {
@@ -22,11 +20,19 @@ const sheet = css`
 `;
 
 function formatMessage(message: string): string {
-	return DOMPurify.sanitize(marked.parse(message) as string);
+	// Remove tool result tags and their content from user-facing display
+	let cleanedMessage = message.replace(/<tool-result>[\s\S]*?<\/tool-result>/g, '');
+	
+	// Only remove TOOL: calls that appear to be complete (followed by newline or end of string)
+	// This prevents partial filtering of incomplete chunks
+	cleanedMessage = cleanedMessage.replace(/TOOL:\w+\s+[^\[\r\n]+?(?:\s*\[INSTRUCTION:\s*[^\]]+\])?\s*(?:\n|$)/g, '');
+	
+	return DOMPurify.sanitize(marked.parse(cleanedMessage) as string);
 }
 
 class Message {
 	private chunks: Chunk[] = [];
+	private originalContent: string = '';
 
 	view = html`<div style='margin-top: 1em;'>
 		<b>${text('role', 'Assistant' as Role)}</b>
@@ -34,9 +40,10 @@ class Message {
 		${node('body', md => html`<div>${md}</div>`)}
 	</div>`;
 
-	constructor(role: Role, body: string = '', isDone: boolean = true) {
+	constructor(role: Role, body: string = '', isDone: boolean = false) {
 		this.isDone = isDone;
 		this.role = role;
+		this.originalContent = body;
 		this.view.data.body = formatMessage(body);
 	}
 
@@ -58,13 +65,23 @@ class Message {
 
 	set role(role: Role) {
 		this.view.data.role = role;
+		if (role === 'step') {
+			this.view.style.opacity = "0.5";
+		}
 	}
 
+	// Returns the original unformatted content
+	get content(): string {
+		return this.originalContent;
+	}
+
+	// Returns the formatted HTML body for display
 	get body() {
 		return this.view.data.body;
 	}
 
 	set body(content: string) {
+		this.originalContent = content;
 		this.view.data.body = formatMessage(content);
 	}
 
@@ -74,17 +91,23 @@ class Message {
 
 		let md: string[] = [];
 		for (const c of this.chunks) {
-			if (typeof c.data !== 'string') {
+			if (c.data.type === 'text') {
 				md.push(c.data.text);
 			}
 		}
 
-		this.body = md.join('');
+		const newContent = md.join('');
+		this.originalContent = newContent;
+		// Shouldn't need to filter here. But, seems to matter. *WHY!? 🤔
+		this.view.data.body = formatMessage(newContent);
 
-		if (chunk.data === '**start**') {
+		if (chunk.data.type === 'start') {
 			this.isDone = false;
-		} else if (chunk.data === '**end**') {
+		} else if (chunk.data.type === 'end') {
 			this.isDone = true;
+		} else if (chunk.data.type === 'status' || chunk.data.type === 'title') {
+			// Keep the message in processing state during tool calls
+			this.isDone = false;
 		}
 	}
 }
@@ -94,6 +117,16 @@ async function Chat() {
 
 	const self = html`<div id='chat'>
 		${sheet}
+
+		<!-- Conversation Management -->
+		<div style='margin-bottom: 1em; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;'>
+			<label style='font-weight: bold;'>Conversations:</label>
+			<select ${id('conversationSelect', HTMLSelectElement)} style='min-width: 200px;'>
+				<option value="">New Conversation</option>
+			</select>
+			<button ${id('newConversationBtn', HTMLButtonElement)} style='padding: 5px 10px;'>New</button>
+			<button ${id('deleteConversationBtn', HTMLButtonElement)} style='padding: 5px 10px; background-color: #dc3545; color: white; border: none; border-radius: 3px;' disabled>Delete</button>
+		</div>
 
 		<!-- All messages. Markdown formatted. Sanitized. -->
 		<div ${id('messageContainer', HTMLDivElement)} class='messages'>
@@ -108,24 +141,28 @@ async function Chat() {
 			onsubmit=${async (event: Event) => {
 				event.preventDefault();
 				if (!self.activeRoom) {
-					self.data.status = "<b>Not connected!</b>";
-					return;
+					await self.createConversation();
 				}
-				self.data.messages.push(new Message('user', self.data.message.value.trim()));
+				
+				const userMessage = self.data.message.value.trim();
+				if (!userMessage) return;
+				
+				// Add user message to UI with original text
+				self.data.messages.push(new Message('user', userMessage));
 				self.data.message.value = '';
 				self.data.message.disabled = true;
 				self.data.submitButton.disabled = true;
 				self.data.message.style.height = 'auto';
-				self.data.messageStatus = '<i>Thinking ...</i>';
+				self.data.messageStatus = '📨 Sending ...';
 				self.autoscroll();
-				llm.send(null, self.activeRoom, self.data.messages.map(m => ({
-					role: m.role,
-					content: m.body,
-				}))).catch(error => {
+				
+				// Send only the latest user message to the server
+				llm.send(null, self.activeRoom!, userMessage).catch(error => {
 					console.error(error);
-					self.data.status = '<b>Error. Try again.</b>';
+					self.data.status = 'Error. Try again.';
 					self.data.message.disabled = false;
 					self.data.submitButton.disabled = false;
+					self.data.messageStatus = '';
 				});
 			}}
 		><div class='flex-row'>
@@ -194,10 +231,12 @@ async function Chat() {
 		</div></form>
 
 		<!-- Connection status -->
-		<span style='color: var(--color-muted)'>${text('status', 'Connecting ...')}</span>
+		<span style='color: var(--color-muted)'>${text('status', 'Just waiting for you!')}</span>
 
 	</div>`.extend(() => ({
 		activeRoom: undefined as string | undefined,
+		conversations: [] as Conversation[],
+		
 		isScrolledDownWithinMargin(margin: number) {
 			const container = self.data.messageContainer;
 			const scrollTop = container.scrollTop;
@@ -210,12 +249,141 @@ async function Chat() {
 			container.scrollTop = container.scrollHeight - container.clientHeight;
 		},
 		disconnect() {
-			// no implementation until connected
+			// Will be replaced with actual unsubscribe function when connected
+		},
+		
+		async loadConversations() {
+			try {
+				self.conversations = await llm.getConversations(null);
+				const select = self.data.conversationSelect;
+				
+				// Clear existing options except the first one
+				while (select.options.length > 1) {
+					select.remove(1);
+				}
+				
+				// Add conversation options
+				for (const conv of self.conversations) {
+					const option = document.createElement('option');
+					option.value = conv.conversationId;
+					option.text = conv.name;
+					select.add(option);
+				}
+			} catch (error) {
+				console.error('Failed to load conversations:', error);
+			}
+		},
+
+		async createConversation() {
+			try {
+				// New conversation - just create room, don't save to database yet
+				self.data.messageStatus = '';
+				self.disconnect(); 
+				self.activeRoom = await llm.createRoom(null);
+				self.data.messages.splice(0); // Clear messages
+				messageIndex.clear();
+				
+				// Set dropdown to show "New Conversation" but don't add permanent entry yet
+				self.data.conversationSelect.value = "";
+				self.data.deleteConversationBtn.disabled = true; // Can't delete unsaved conversations
+				await self.connect();
+				return;
+			} catch (error) {
+				console.error('Failed to create conversation:', error);
+				self.data.status = 'Error creating conversation.';
+			}
+		},
+		
+		async loadConversation(roomId: string) {
+			try {
+				self.data.messageStatus = '';
+
+				if (roomId !== self.activeRoom) {
+					// reset states to blank.
+					self.activeRoom = undefined;
+					self.disconnect();
+					self.data.messages.splice(0);
+					messageIndex.clear();
+				}
+
+				if (roomId) {
+					// Load conversation history
+					const history = await llm.getHistory(null, roomId);
+					console.log('loaded history', history);
+					for (const msg of history) {
+						const message = new Message(msg.role, msg.content);
+						self.data.messages.push(message);
+					}
+					
+					// Set active room and connect
+					self.activeRoom = roomId;
+					await self.connect();
+				}
+				
+				self.data.conversationSelect.value = roomId;
+				self.data.deleteConversationBtn.disabled = false;
+				self.autoscroll();
+			} catch (error) {
+				console.error('Failed to load conversation:', error);
+				self.data.status = 'Error loading conversation.';
+			}
+		},
+		
+		async deleteCurrentConversation() {
+			if (!self.activeRoom) return;
+			
+			try {
+				await llm.deleteConversation(null, self.activeRoom);
+				self.data.messageStatus = '';
+				
+				// Clear UI and start new conversation
+				self.data.messages.splice(0);
+				messageIndex.clear();
+				self.data.conversationSelect.value = "";
+				self.data.deleteConversationBtn.disabled = true;
+				self.activeRoom = undefined;
+				
+				// Create new room
+				self.disconnect();
+				
+				// Reload conversation list
+				await self.loadConversations();
+			} catch (error) {
+				console.error('Failed to delete conversation:', error);
+				self.data.status = 'Error deleting conversation.';
+			}
+		},
+		
+		updateConversationTitle(newTitle: string) {
+			// Update the dropdown option for the current conversation
+			const select = self.data.conversationSelect;
+			let currentOption = Array.from(select.options).find(opt => opt.value === self.activeRoom);
+			
+			// If no option exists yet (new conversation getting its first title), create it
+			if (!currentOption && self.activeRoom) {
+				currentOption = document.createElement('option');
+				currentOption.value = self.activeRoom;
+				currentOption.text = newTitle;
+				select.add(currentOption, 1); // Add after "New Conversation" option
+				select.value = self.activeRoom;
+				
+				// Enable delete button now that conversation is saved
+				self.data.deleteConversationBtn.disabled = false;
+			} else if (currentOption) {
+				// Update existing option
+				currentOption.text = newTitle;
+			}
 		},
 		async connect() {
-			self.activeRoom = await llm.createRoom(null);
+			if (!self.activeRoom) {
+				console.error('No active room to connect to');
+				return;
+			}
+			
+			// Disconnect any existing connection first
+			self.disconnect();
+			
 			const roomStream = await llm.getRoom(null, self.activeRoom);
-			let isThinking = false;
 			self.disconnect = roomStream.subscribe({
 				onopen() {
 					self.data.status = `Connected.`;
@@ -223,25 +391,41 @@ async function Chat() {
 				onmessage(chunk) {
 					const startedAtBottom = self.isScrolledDownWithinMargin(50);
 					
+					// Handle special title update messages
+					if (chunk.data.type === 'title') {
+						const newTitle = chunk.data.value;
+						self.updateConversationTitle(newTitle);
+						return;
+					}
+
+					if (chunk.data.type === 'start') {
+						self.data.messageStatus = '👀 Reading ...';
+						return;
+					}
+
+					if (chunk.data.type === 'status') {
+						self.data.messageStatus = `${chunk.data.status}`;
+						return;
+					}
+
 					let message: Message;
 					if (messageIndex.has(chunk.mid)) {
 						message = messageIndex.get(chunk.mid)!;
 					} else {
-						message = new Message('assistant');
+						message = new Message(
+							chunk.data.type === 'text' ? chunk.data.role : 'assistant'
+						);
 						self.data.messages.push(message);
 						messageIndex.set(chunk.mid, message);
 					}
-					
+
 					message.appendChunk(chunk);
 
 					if (!message.isDone) {
-						isThinking = true;
-						self.data.messageStatus = '💫';
 						self.data.message.disabled = true;
 						self.data.submitButton.disabled = true;
 					} else {
-						isThinking = false;
-						self.data.messageStatus = '';
+						self.data.messageStatus = '<span class="muted">✔️ Done responding.</span>';
 						self.data.submitButton.disabled = false;
 						self.data.message.disabled = false;
 						self.data.message.focus();
@@ -258,7 +442,26 @@ async function Chat() {
 		}
 	}))
 	.onadd(async () => {
-		self.connect();
+		// Load conversations first
+		await self.loadConversations();
+		
+		// Set up event handlers
+		self.data.conversationSelect.addEventListener('change', (e) => {
+			const target = e.target as HTMLSelectElement;
+			self.loadConversation(target.value);
+		});
+		
+		self.data.newConversationBtn.addEventListener('click', () => {
+			self.loadConversation(""); // Empty string = new conversation
+		});
+		
+		self.data.deleteConversationBtn.addEventListener('click', () => {
+			if (confirm('Are you sure you want to delete this conversation? This cannot be undone.')) {
+				self.deleteCurrentConversation();
+			}
+		});
+		
+		// Start with new conversation
 		self.data.message.value = '';
 	});
 	return self;
