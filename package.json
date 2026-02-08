@@ -12,16 +12,16 @@
 		"dompurify": "^3.2.3",
 		"jsdom": "^25.0.0",
 		"marked": "^15.0.6",
-		"wirejs-components": "^0.1.99-llm",
+		"wirejs-components": "^0.1.100-llm",
 		"wirejs-dom": "^1.0.44",
-		"wirejs-module-payments-stripe": "^0.1.50-llm",
-		"wirejs-resources": "^0.1.156-llm",
-		"wirejs-web-worker": "^1.0.53-llm"
+		"wirejs-module-payments-stripe": "^0.1.51-llm",
+		"wirejs-resources": "^0.1.157-llm",
+		"wirejs-web-worker": "^1.0.54-llm"
 	},
 	"devDependencies": {
 		"@types/jsdom": "^21.0.0",
 		"typescript": "^5.7.3",
-		"wirejs-scripts": "^3.0.154-llm"
+		"wirejs-scripts": "^3.0.155-llm"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",
