@@ -10,18 +10,18 @@
 	],
 	"dependencies": {
 		"dompurify": "^3.2.3",
-		"jsdom": "^21.0.0",
+		"jsdom": "^27.0.0",
 		"marked": "^15.0.6",
-		"wirejs-components": "^0.1.95-llm",
+		"wirejs-components": "^0.1.96-llm",
 		"wirejs-dom": "^1.0.44",
-		"wirejs-module-payments-stripe": "^0.1.46-llm",
-		"wirejs-resources": "^0.1.152-llm",
-		"wirejs-web-worker": "^1.0.49-llm"
+		"wirejs-module-payments-stripe": "^0.1.47-llm",
+		"wirejs-resources": "^0.1.153-llm",
+		"wirejs-web-worker": "^1.0.50-llm"
 	},
 	"devDependencies": {
-		"@types/jsdom": "^21.0.0",
+		"@types/jsdom": "^27.0.0",
 		"typescript": "^5.7.3",
-		"wirejs-scripts": "^3.0.150-llm"
+		"wirejs-scripts": "^3.0.151-llm"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",
