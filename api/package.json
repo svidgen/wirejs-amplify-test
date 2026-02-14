@@ -11,5 +11,13 @@
 		"types": "./index.ts",
 		"wirejs:client": "./dist/index.client.js",
 		"default": "./dist/index.js"
+	},
+	"dependencies": {
+		"jsdom": "^25.0.0",
+		"wirejs-module-payments-stripe": "^0.1.51-llm",
+		"wirejs-resources": "^0.1.157-llm"
+	},
+	"devDependencies": {
+		"@types/jsdom": "^21.0.0"
 	}
 }
