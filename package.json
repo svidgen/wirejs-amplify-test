@@ -25,7 +25,8 @@
 		"prestart": "npm run prestart --workspaces --if-present",
 		"start": "wirejs-scripts ws-run-parallel start",
 		"start:public": "wirejs-scripts ws-run-parallel start:public",
-		"build": "npm run build --workspaces --if-present"
+		"build": "npm run build --workspaces --if-present",
+		"deep-clean": "rm -rf node_modules dist pre-dist web-worker/dist api/dist"
 	},
 	"engines": {
 		"node": ">=20.0.0"
