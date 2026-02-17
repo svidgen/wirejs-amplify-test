@@ -12,6 +12,6 @@
 		"start": "wirejs-scripts watch src npm run prebuild"
 	},
 	"dependencies": {
-		"wirejs-web-worker": "^1.0.54-llm"
+		"wirejs-web-worker": "*"
 	}
 }
