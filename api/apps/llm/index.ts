@@ -39,6 +39,11 @@ export const LLM = (auth: AuthenticationApi) => {
 				'assistant', 'user', 'step'
 			].includes(m.role) && !!m.content);
 		},
+		async getMessage(room: string, mid: number) {
+			const user = await auth.requireCurrentUser(context);
+			await infra.assertUserIsAuthorized(user, room);
+			return infra.getMessage(room, mid);
+		},
 		async createRoom() {
 			const user = await auth.requireCurrentUser(context);
 			const conversation = await infra.createConversation(user);

@@ -17,20 +17,21 @@ const sheet = css`
 	.flex-row > textarea {
 		margin-right: 10px;
 	}
+	think, thinking {
+		display: none;
+	}
 `;
 
 function formatMessage(message: string): string {
-	// Remove tool result tags and their content from user-facing display
-	let cleanedMessage = message.replace(/<tool-result>[\s\S]*?<\/tool-result>/g, '');
-	
-	// Only remove TOOL: calls that appear to be complete (followed by newline or end of string)
-	// This prevents partial filtering of incomplete chunks
-	cleanedMessage = cleanedMessage.replace(/TOOL:\w+\s+[^\[\r\n]+?(?:\s*\[INSTRUCTION:\s*[^\]]+\])?\s*(?:\n|$)/g, '');
-	
-	return DOMPurify.sanitize(marked.parse(cleanedMessage) as string);
+	const htmlString = marked.parse(message) as string;
+	const purified = DOMPurify.sanitize(htmlString, {
+		ADD_TAGS: ['think', 'thinking']
+	});
+	return purified;
 }
 
 class Message {
+	private roomId: string;
 	private chunks: Chunk[] = [];
 	private originalContent: string = '';
 
@@ -40,7 +41,8 @@ class Message {
 		${node('body', md => html`<div>${md}</div>`)}
 	</div>`;
 
-	constructor(role: Role, body: string = '', isDone: boolean = false) {
+	constructor(roomId: string, role: Role, body: string = '', isDone: boolean = false) {
+		this.roomId = roomId;
 		this.isDone = isDone;
 		this.role = role;
 		this.originalContent = body;
@@ -104,7 +106,12 @@ class Message {
 		if (chunk.data.type === 'start') {
 			this.isDone = false;
 		} else if (chunk.data.type === 'end') {
-			this.isDone = true;
+			llm.getMessage(null, this.roomId, chunk.mid).then(fullMessage => {
+				if (fullMessage) {
+					this.body = fullMessage.content;
+					this.isDone = true;
+				}
+			});
 		} else if (chunk.data.type === 'status' || chunk.data.type === 'title') {
 			// Keep the message in processing state during tool calls
 			this.isDone = false;
@@ -148,7 +155,7 @@ async function Chat() {
 				if (!userMessage) return;
 				
 				// Add user message to UI with original text
-				self.data.messages.push(new Message('user', userMessage));
+				self.data.messages.push(new Message(self.activeRoom!, 'user', userMessage));
 				self.data.message.value = '';
 				self.data.message.disabled = true;
 				self.data.submitButton.disabled = true;
@@ -311,7 +318,7 @@ async function Chat() {
 					const history = await llm.getHistory(null, roomId);
 					console.log('loaded history', history);
 					for (const msg of history) {
-						const message = new Message(msg.role, msg.content);
+						const message = new Message(roomId, msg.role, msg.content);
 						self.data.messages.push(message);
 					}
 					
@@ -413,6 +420,7 @@ async function Chat() {
 						message = messageIndex.get(chunk.mid)!;
 					} else {
 						message = new Message(
+							self.activeRoom!,
 							chunk.data.type === 'text' ? chunk.data.role : 'assistant'
 						);
 						self.data.messages.push(message);

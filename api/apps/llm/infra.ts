@@ -227,6 +227,13 @@ export class Infra extends Resource {
 		return messagesArray;
 	};
 
+	async getMessage(
+		conversationId: string,
+		mid: number
+	): Promise<ConversationMessage | undefined> {
+		return this.messages.get({ conversationId, mid });
+	}
+
 	async addMessage<T extends LLMMessage | WorkflowStep>(
 		conversationId: string,
 		mid: number,
