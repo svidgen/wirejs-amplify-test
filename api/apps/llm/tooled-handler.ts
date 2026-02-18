@@ -49,6 +49,7 @@ export const tooledHandler = (infra: Infra) => async (
 				mid: mid++
 			});
 			responseMid = response.mid;
+			history.push(response);
 
 			toolCalls = tools && tools.length > 0 ? response.tool_calls ?? [] : [];
 			for (const call of toolCalls) {
