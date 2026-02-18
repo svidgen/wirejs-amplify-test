@@ -87,7 +87,7 @@ class Message {
 		this.view.data.body = formatMessage(content);
 	}
 
-	appendChunk(chunk: Chunk) {
+	async appendChunk(chunk: Chunk) {
 		this.chunks.push(chunk);
 		this.chunks.sort((a, b) => a.seq > b.seq ? 1 : -1);
 
@@ -106,12 +106,11 @@ class Message {
 		if (chunk.data.type === 'start') {
 			this.isDone = false;
 		} else if (chunk.data.type === 'end') {
-			llm.getMessage(null, this.roomId, chunk.mid).then(fullMessage => {
-				if (fullMessage) {
-					this.body = fullMessage.content;
-					this.isDone = true;
-				}
-			});
+			const fullMessage = await llm.getMessage(null, this.roomId, chunk.mid);
+			if (fullMessage) {
+				this.body = fullMessage.content;
+				this.isDone = true;
+			}
 		} else if (chunk.data.type === 'status' || chunk.data.type === 'title') {
 			// Keep the message in processing state during tool calls
 			this.isDone = false;
@@ -395,7 +394,7 @@ async function Chat() {
 				onopen() {
 					self.data.status = `Connected.`;
 				},
-				onmessage(chunk) {
+				async onmessage(chunk) {
 					const startedAtBottom = self.isScrolledDownWithinMargin(50);
 					
 					// Handle special title update messages
@@ -427,7 +426,7 @@ async function Chat() {
 						messageIndex.set(chunk.mid, message);
 					}
 
-					message.appendChunk(chunk);
+					await message.appendChunk(chunk);
 
 					if (!message.isDone) {
 						self.data.message.disabled = true;
