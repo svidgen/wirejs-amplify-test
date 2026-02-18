@@ -42,6 +42,12 @@ export const tooledHandler = (infra: Infra) => async (
 		do {
 			const tools = maxLoops > 0 ? standard : undefined;
 			
+			// lets connected clients know we're working on a response now.
+			await infra.sendControlMessage(room, {
+				type: 'status',
+				status: `📝 Responding ...`
+			});
+
 			const response = await infra.respond({
 				conversationId: room,
 				history: history.filter(h => h.role !== 'step'),
@@ -62,6 +68,7 @@ export const tooledHandler = (infra: Infra) => async (
 					type: 'status',
 					status: `⚒️ Calling ${callString}`.slice(0, 100) + '...'
 				}, mid);
+				
 				try {
 					const t = tools!.find(t => t.name === name);	
 					if (!t) throw new Error(`${name} does not exist.`);
@@ -90,13 +97,6 @@ export const tooledHandler = (infra: Infra) => async (
 					}))
 				}
 			}
-
-			// lets connected clients know we're working on an actual
-			// response now.
-			await infra.sendControlMessage(room, {
-				type: 'status',
-				status: `📝 Responding ...`
-			});
 
 			maxLoops--;
 		} while (toolCalls.length > 0);
