@@ -11,15 +11,15 @@
 	"dependencies": {
 		"dompurify": "^3.2.3",
 		"marked": "^15.0.6",
-		"wirejs-components": "^0.1.108",
+		"wirejs-components": "^0.1.109",
 		"wirejs-dom": "^1.0.44",
-		"wirejs-module-payments-stripe": "^0.1.59",
-		"wirejs-resources": "^0.1.165",
-		"wirejs-web-worker": "^1.0.62"
+		"wirejs-module-payments-stripe": "^0.1.60",
+		"wirejs-resources": "^0.1.166",
+		"wirejs-web-worker": "^1.0.63"
 	},
 	"devDependencies": {
 		"typescript": "^5.7.3",
-		"wirejs-scripts": "^3.0.163"
+		"wirejs-scripts": "^3.0.164"
 	},
 	"scripts": {
 		"prebuild": "npm run prebuild --workspaces --if-present",

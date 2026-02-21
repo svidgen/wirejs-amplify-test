@@ -12,7 +12,7 @@ const DISCLAIMER = html`<div>
 
 async function Account() {
 	return html`<div id='${MENU_ID}'>
-		${AccountMenu({ api: auth })}
+		${await AccountMenu({ api: auth })}
 	</div>`;
 }
 
