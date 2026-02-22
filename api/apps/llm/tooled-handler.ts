@@ -1,4 +1,4 @@
-import type { ToolCall } from 'wirejs-resources';
+import type { ToolCall, ToolMessage } from 'wirejs-resources';
 import { Infra } from './infra.js'
 import { cleanTitle } from './utils.js';
 import { generateConversationTitle } from './prompts.js';
@@ -58,6 +58,7 @@ export const tooledHandler = (infra: Infra) => async (
 			history.push(response);
 
 			toolCalls = tools && tools.length > 0 ? response.tool_calls ?? [] : [];
+			const toolMessage: ToolMessage = { role: 'tool', content: [] };
 			for (const call of toolCalls) {
 				const name = call.function.name;
 				const args = call.function.arguments;
@@ -82,20 +83,22 @@ export const tooledHandler = (infra: Infra) => async (
 
 					// makes tool results visible in the conversation history
 					// to the agent.
-					history.push(await infra.addMessage(room, mid++, {
-						role: 'tool',
-						tool_name: name,
-						tool_call_id: call.id || JSON.stringify([name, args]),
+					toolMessage.content.push({
+						id: call.id || JSON.stringify([name, args]),
 						content: JSON.stringify(r, null, 2),
-					}));
+						isError: false,
+					})
 				} catch (error) {
-					history.push(await infra.addMessage(room, mid++, {
-						role: 'tool',
-						tool_name: name,
-						tool_call_id: call.id || JSON.stringify([name, args]),
+					toolMessage.content.push({
+						id: call.id || JSON.stringify([name, args]),
 						content: String(error),
-					}))
+						isError: true,
+					})
 				}
+			}
+
+			if (toolCalls.length > 0) {
+				history.push(await infra.addMessage(room, mid++, toolMessage));
 			}
 
 			maxLoops--;
