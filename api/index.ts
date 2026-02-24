@@ -1,4 +1,4 @@
-import { AuthenticationService, Endpoint } from 'wirejs-resources';
+import { AuthenticationService, Endpoint, GoogleOIDCProvider } from 'wirejs-resources';
 import { Chat } from './apps/chat.js';
 import { Todos } from './apps/todos.js';
 import { Wiki } from './apps/wiki.js';
@@ -11,7 +11,9 @@ export type * from './apps/todos.js';
 export type * from './apps/store.js';
 export type * from './apps/admin.js';
 
-const authService = new AuthenticationService('app', 'core-users');
+const authService = new AuthenticationService('app', 'core-users', {
+	oidcProviders: [ GoogleOIDCProvider ]
+});
 
 export const auth = authService.buildApi();
 export const chat = Chat(auth);

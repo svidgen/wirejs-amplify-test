@@ -1,4 +1,5 @@
 import { html, list, node, text, hydrate } from 'wirejs-dom/v2';
+import { AuthenticatedContent } from 'wirejs-components';
 import { Main } from '../layouts/main.js';
 import { admin, Endpoint, Setting, SystemAttribute } from 'internal-api';
 
@@ -154,14 +155,15 @@ function Admin() {
 
 async function App() {
 	const self = html`<div id='app'>
-	${node('isAdmin', false, (isAdmin: boolean | undefined) => 
-		isAdmin ?
-			html`<div><p>Your <b>are</b> an admin.</p>${Admin()}</div>`
-			: html`<p>You are <b>NOT</b> an admin.</p>`
-	)}
-	</div>`.onadd(async self => {
-		self.data.isAdmin = await admin.isAdmin(null);
-	});
+		${await AuthenticatedContent({
+			authenticated: async () => {
+				return (await admin.isAdmin(null)) ?
+					html`<div><p>Your <b>are</b> an admin.</p>${Admin()}</div>`
+					: html`<p>You are <b>NOT</b> an admin.</p>`
+			},
+			unauthenticated: () => html`<p>You are not signed in.</p>`,
+		})}
+	</div>`;
 	return self;
 }
 
