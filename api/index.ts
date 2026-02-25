@@ -5,6 +5,7 @@ import { Wiki } from './apps/wiki.js';
 import { Store } from './apps/store.js';
 import { Admin } from './apps/admin.js';
 import { LLM } from './apps/llm/index.js';
+import { Mailer } from './apps/email.js';
 
 export type * from './apps/llm/index.js';
 export type * from './apps/todos.js';
@@ -22,6 +23,7 @@ export const wiki = Wiki(auth);
 export const store = Store(auth);
 export const admin = Admin(auth);
 export const llm = LLM(auth);
+export const mailer = Mailer(auth);
 
 new Endpoint('app', 'sample-endpoint', {
 	description: "Sample endpoint to show programmatic endpoint creation.",

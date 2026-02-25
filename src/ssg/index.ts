@@ -14,6 +14,7 @@ export async function generate() {
 				<li><a href='/web-worker-test.html'>Web Worker Test</a></li>
 				<li><a href='/storefront.html'>Storefront</a></li>
 				<li><a href='/llm-test.html'>LLM Test</a></li>
+				<li><a href='/email.html'>Email Test</a></li>
 				<li><a href='/admin.html'>Admin</a></li>
 			</ul>
 		</div>`
