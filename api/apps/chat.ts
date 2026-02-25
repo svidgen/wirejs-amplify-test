@@ -1,6 +1,7 @@
 import {
 	AuthenticationApi,
 	BackgroundJob,
+	CronJob,
 	RealtimeService,
 	withContext,
 } from "wirejs-resources";
@@ -29,6 +30,22 @@ const counter = new BackgroundJob('app', 'countdowns', {
 			}, 1000);
 		});
 	},
+});
+
+new CronJob('app', 'chat-ping', {
+	schedule: '*/5 * * * *',
+	async handler() {
+		const now = new Date();
+		const nowString = now.toLocaleString();
+		const tzOffset = now.getTimezoneOffset() / 60;
+		const tzOffsetString = tzOffset ? `+${tzOffset}` : `-${tzOffset}`;
+		const tz = `UTC${tzOffsetString}`;
+
+		realtimeService.publish('test', [{
+			username: 'cron',
+			body: `Hi. Just here to let you know what time it is. It's ${nowString} ${tz} ...`
+		}])
+	}
 });
 
 export const Chat = (auth: AuthenticationApi) => withContext(context => ({
