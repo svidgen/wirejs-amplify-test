@@ -35,16 +35,19 @@ const counter = new BackgroundJob('app', 'countdowns', {
 new CronJob('app', 'chat-ping', {
 	schedule: '*/5 * * * *',
 	async handler() {
+		console.log('chat-ping invocation handler start');
 		const now = new Date();
 		const nowString = now.toLocaleString();
 		const tzOffset = now.getTimezoneOffset() / 60;
 		const tzOffsetString = tzOffset ? `+${tzOffset}` : `-${tzOffset}`;
 		const tz = `UTC${tzOffsetString}`;
 
-		realtimeService.publish('test', [{
+		await realtimeService.publish('test', [{
 			username: 'cron',
 			body: `Hi. Just here to let you know what time it is. It's ${nowString} ${tz} ...`
-		}])
+		}]);
+
+		console.log('chat-ping invocation handler end');
 	}
 });
 
