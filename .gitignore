@@ -8,3 +8,4 @@ api/index.js
 api/dist
 workers/dist
 *.swp
+.outbox
